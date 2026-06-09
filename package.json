@@ -42,5 +42,8 @@
     "tiktoken": "^1.0.22",
     "uuid": "^14.0.0",
     "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "supabase": "^2.105.0"
   }
 }
