@@ -6,7 +6,14 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "supabase:start": "supabase start",
+    "supabase:start:db": "supabase db start",
+    "supabase:status": "supabase status",
+    "supabase:link": "supabase link --project-ref siklkhhiporcupiqxhui",
+    "supabase:push": "supabase db push",
+    "supabase:push:with-seed": "supabase db push --include-seed",
+    "supabase:verify:local": "supabase db query --local \"select table_name from information_schema.tables where table_schema = 'public' order by table_name;\" -o table"
   },
   "keywords": [],
   "author": "",

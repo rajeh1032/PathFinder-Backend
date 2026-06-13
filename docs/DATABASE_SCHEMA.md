@@ -12,6 +12,8 @@ Sources used:
 
 Use Supabase PostgreSQL for structured application data, relationships, statuses, AI logs, RAG metadata, and vector embeddings. Supabase is not a NoSQL database, but PostgreSQL gives us `jsonb` columns for flexible AI payloads and extracted CV/job data.
 
+Authentication is handled by the Node.js/Express backend, not Supabase Auth. The backend owns register, login, password hashing, JWT issuing, refresh/logout behavior, and password changes.
+
 Use Supabase Storage only for binary files:
 
 - CV files
@@ -71,13 +73,14 @@ Small role lookup table. Keep only `user` and `admin` for MVP.
 
 ### `users`
 
-Application user profile linked to Supabase Auth. Do not store passwords here.
+Application user account used by the Node.js/Express auth module.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `id` | `uuid` | Primary key, FK to `auth.users.id` |
+| `id` | `uuid` | Primary key |
 | `name` | `text` | Display name |
 | `email` | `text` | Unique |
+| `password_hash` | `text` | Hashed password for Node auth; never return in API responses |
 | `role_id` | `uuid` | FK to `roles.id` |
 | `is_active` | `boolean` | Default `true` |
 | `last_login_at` | `timestamptz` | Nullable |
@@ -93,15 +96,127 @@ One profile per user.
 | --- | --- | --- |
 | `id` | `uuid` | Primary key |
 | `user_id` | `uuid` | Unique FK to `users.id` |
-| `education_level` | `text` | Nullable |
+| `education_level_id` | `uuid` | FK to `education_level.id` |
 | `university` | `text` | Nullable |
 | `major` | `text` | Nullable |
-| `current_status` | `text` | Student, graduate, career shifter, etc. |
-| `experience_level` | `text` | Beginner, junior, mid, etc. |
+| `current_status_id` | `uuid` | FK to `current_status.id` |
+| `experience_year_id` | `uuid` | FK to `experience_year.id` |
 | `target_career_id` | `uuid` | FK to `career_paths.id` |
 | `location` | `text` | Nullable |
+| `headline` | `text` | Short professional headline |
+| `bio` | `text` | Profile biography/about text |
+| `avatar_url` | `text` | Public/signed avatar URL |
+| `avatar_storage_path` | `text` | Supabase Storage path for avatar |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
+
+### `profile_experiences`
+
+Work and training experience entries shown on a profile.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `profile_id` | `uuid` | FK to `profiles.id` |
+| `job_title` | `text` | Required |
+| `company_name` | `text` | Required |
+| `employment_type` | `text` | Internship, full-time, training, etc. |
+| `location` | `text` | Nullable |
+| `start_date` | `date` | Nullable |
+| `end_date` | `date` | Nullable |
+| `is_current` | `boolean` | Default `false` |
+| `description` | `text` | Nullable |
+| `skills` | `jsonb` | Array of skills used |
+| `display_order` | `integer` | Sort order |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
+### `profile_education`
+
+Education entries shown on a profile.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `profile_id` | `uuid` | FK to `profiles.id` |
+| `institution` | `text` | Required |
+| `degree` | `text` | Nullable |
+| `field_of_study` | `text` | Nullable |
+| `education_level_id` | `uuid` | FK to `education_level.id` |
+| `start_date` | `date` | Nullable |
+| `end_date` | `date` | Nullable |
+| `is_current` | `boolean` | Default `false` |
+| `grade` | `text` | Nullable |
+| `description` | `text` | Nullable |
+| `display_order` | `integer` | Sort order |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
+### `user_preferences`
+
+One preference row per user for job, learning, and recommendation personalization.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | Unique FK to `users.id` |
+| `preferred_job_types` | `jsonb` | Array |
+| `preferred_locations` | `jsonb` | Array |
+| `remote_preference` | `text` | Remote, hybrid, onsite, etc. |
+| `salary_expectation_min` | `numeric(12,2)` | Nullable |
+| `salary_expectation_max` | `numeric(12,2)` | Nullable |
+| `salary_currency` | `text` | EGP, USD, etc. |
+| `preferred_career_path_ids` | `uuid[]` | Career path preferences |
+| `learning_goal` | `text` | Nullable |
+| `metadata` | `jsonb` | Flexible preference metadata |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
+### `user_achievements`
+
+Achievements, certificates, awards, and milestones for a user.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | FK to `users.id` |
+| `title` | `text` | Required |
+| `description` | `text` | Nullable |
+| `achievement_type` | `text` | Certificate, project, award, milestone, etc. |
+| `issuer` | `text` | Nullable |
+| `issued_at` | `date` | Nullable |
+| `certificate_url` | `text` | Nullable |
+| `metadata` | `jsonb` | Flexible achievement metadata |
+| `display_order` | `integer` | Sort order |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
+### `education_level`
+
+Lookup table for profile education levels.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `education_level` | `text` | Unique value: High school, Associate's, Bachelor's, Master's, PhD, Bootcamp/self-taught |
+
+### `experience_year`
+
+Lookup table for profile experience ranges.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `experience_level` | `text` | Unique value: 0-1years, 1-2years, 2-4years, 4-7years, +7years |
+
+### `current_status`
+
+Lookup table for current career status.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `current_status` | `text` | Unique value: actively looking, open to offers, employed, open to shift, student/fresh grad |
 
 ### `skills`
 
@@ -174,6 +289,7 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | --- | --- | --- |
 | `id` | `uuid` | Primary key |
 | `title` | `text` | Required |
+| `description` | `text` | Course description |
 | `provider` | `text` | Required |
 | `url` | `text` | Course URL |
 | `thumbnail_url` | `text` | Optional |
@@ -181,11 +297,32 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | `level` | `text` | Beginner, intermediate, advanced |
 | `duration` | `text` | Human-readable duration |
 | `category` | `text` | Required |
+| `category_id` | `uuid` | FK to `course_categories.id` |
+| `learning_outcomes` | `jsonb` | Array of expected outcomes |
+| `price` | `numeric(10,2)` | Course price, nullable |
+| `currency` | `text` | Example: USD, EGP |
+| `is_free` | `boolean` | Default `true` |
+| `rating` | `numeric(3,2)` | 0 to 5 |
+| `reviews_count` | `integer` | Default `0` |
+| `enrollment_count` | `integer` | Default `0` |
+| `popularity_score` | `integer` | Default `0` |
 | `is_active` | `boolean` | Default `true` |
 | `created_by` | `uuid` | FK to `users.id` |
 | `updated_by` | `uuid` | FK to `users.id` |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
+
+### `course_categories`
+
+Optional course category lookup for UI icons and sorting.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `name` | `text` | Unique category name |
+| `icon` | `text` | Icon key used by frontend |
+| `display_order` | `integer` | Sort order |
+| `is_active` | `boolean` | Default `true` |
 
 ### `course_skills`
 
@@ -199,6 +336,37 @@ Required missing table from the handoff. Connects courses to the skills they tea
 | `created_at` | `timestamptz` | Default `now()` |
 
 Unique key: `course_id`, `skill_id`.
+
+### `saved_courses`
+
+Courses saved by users.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | FK to `users.id` |
+| `course_id` | `uuid` | FK to `courses.id` |
+| `created_at` | `timestamptz` | Default `now()` |
+
+Unique key: `user_id`, `course_id`.
+
+### `course_enrollments`
+
+Course enrollment and progress tracking.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | FK to `users.id` |
+| `course_id` | `uuid` | FK to `courses.id` |
+| `status` | `text` | `active`, `completed`, `paused`, `cancelled` |
+| `progress` | `integer` | 0 to 100 |
+| `enrolled_at` | `timestamptz` | Default `now()` |
+| `completed_at` | `timestamptz` | Nullable |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
+Unique key: `user_id`, `course_id`.
 
 ### `cvs`
 
@@ -308,6 +476,12 @@ Normalized job listings from admin and external APIs.
 | `required_skills` | `jsonb` | Array of required skills |
 | `employment_type` | `text` | Full-time, internship, remote, etc. |
 | `salary_range` | `text` | Nullable |
+| `level` | `text` | UI level label |
+| `category` | `text` | UI category label |
+| `thumbnail_url` | `text` | Job card/detail thumbnail |
+| `company_logo_url` | `text` | Company logo URL/path |
+| `certificate_provider` | `text` | Related provider shown in UI |
+| `duration` | `text` | Related duration shown in UI |
 | `is_active` | `boolean` | Default `true` |
 | `status` | `job_status` | `draft`, `published`, `archived` |
 | `created_by` | `uuid` | FK to `users.id` |
@@ -338,8 +512,12 @@ User job application tracking.
 | `id` | `uuid` | Primary key |
 | `user_id` | `uuid` | FK to `users.id` |
 | `job_id` | `uuid` | FK to `jobs.id` |
+| `cover_letter_id` | `uuid` | FK to `cover_letters.id` |
 | `status` | `applied_job_status` | Application lifecycle |
 | `applied_at` | `timestamptz` | Default `now()` |
+| `next_step` | `text` | Next action label |
+| `next_step_at` | `timestamptz` | Nullable next action time |
+| `notes` | `text` | User/backend notes |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 
@@ -400,9 +578,14 @@ AI interview attempt.
 | `career_path_id` | `uuid` | FK to `career_paths.id` |
 | `job_id` | `uuid` | FK to `jobs.id` |
 | `status` | `interview_status` | Lifecycle |
+| `interview_type` | `text` | `behavioral`, `technical`, `mock_hr` |
+| `total_questions` | `integer` | Total selected before starting |
+| `started_at` | `timestamptz` | Session start time |
+| `completed_at` | `timestamptz` | Nullable completion time |
 | `overall_score` | `integer` | 0 to 100 |
 | `score_breakdown` | `jsonb` | Structured scores |
-| `feedback_text` | `text` | Final feedback |
+| `quick_ai_insight` | `text` | Short AI result insight |
+| `feedback_text` | `jsonb` | Structured final feedback |
 | `recording_url` | `text` | Storage URL/path |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
@@ -416,10 +599,18 @@ Questions and answers inside an interview session.
 | `id` | `uuid` | Primary key |
 | `interview_session_id` | `uuid` | FK to `interview_sessions.id` |
 | `question` | `text` | Required |
+| `question_order` | `integer` | Order inside the session |
 | `user_answer` | `text` | Nullable |
+| `is_skipped` | `boolean` | Default `false` |
+| `answer_type` | `text` | `text`, `voice` |
+| `answered_at` | `timestamptz` | Nullable answer timestamp |
 | `feedback` | `text` | Nullable |
 | `score` | `integer` | 0 to 100 |
+| `question_status` | `text` | `passed`, `needs_improvement`, `skipped` |
+| `ai_suggestion` | `text` | Short AI suggestion |
 | `generated_by_type` | `generated_by_type` | Usually `ai` |
+
+Unique constraint: `interview_session_id`, `question_order`.
 
 ### `cover_letters`
 
@@ -435,8 +626,28 @@ Generated/editable cover letters.
 | `version` | `integer` | Current version number |
 | `language` | `text` | Example: `en`, `ar` |
 | `generated_by_type` | `generated_by_type` | Usually `ai` |
+| `title` | `text` | History/display title |
+| `score` | `integer` | 0 to 100 |
+| `tone` | `text` | Tone selected/generated |
+| `target_role` | `text` | Target job role |
+| `company_name` | `text` | Target company |
+| `word_count` | `integer` | Current content word count |
+| `last_edited_at` | `timestamptz` | Nullable edit timestamp |
+| `exported_at` | `timestamptz` | Nullable export timestamp |
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
+
+### `cover_letter_insights`
+
+AI review insight cards for generated and edited cover letters.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `cover_letter_id` | `uuid` | FK to `cover_letters.id` |
+| `type` | `text` | Insight type such as strength or improvement |
+| `message` | `text` | Insight message |
+| `created_at` | `timestamptz` | Default `now()` |
 
 ### `cover_letter_versions`
 
@@ -606,6 +817,14 @@ Admin and system audit trail.
 | `roles` | `users` | One-to-many |
 | `users` | `profiles` | One-to-one |
 | `career_paths` | `profiles` | One-to-many target career |
+| `education_level` | `profiles` | One-to-many |
+| `experience_year` | `profiles` | One-to-many |
+| `current_status` | `profiles` | One-to-many |
+| `profiles` | `profile_experiences` | One-to-many |
+| `profiles` | `profile_education` | One-to-many |
+| `education_level` | `profile_education` | One-to-many |
+| `users` | `user_preferences` | One-to-one |
+| `users` | `user_achievements` | One-to-many |
 | `users` | `user_skills` | One-to-many |
 | `skills` | `user_skills` | One-to-many |
 | `cvs` | `cv_skills` | One-to-many |
@@ -614,6 +833,11 @@ Admin and system audit trail.
 | `skills` | `career_path_skills` | One-to-many |
 | `courses` | `course_skills` | One-to-many |
 | `skills` | `course_skills` | One-to-many |
+| `course_categories` | `courses` | One-to-many |
+| `users` | `saved_courses` | One-to-many |
+| `courses` | `saved_courses` | One-to-many |
+| `users` | `course_enrollments` | One-to-many |
+| `courses` | `course_enrollments` | One-to-many |
 | `users` | `cvs` | One-to-many |
 | `cvs` | `cv_analyses` | One-to-one |
 | `users` | `roadmaps` | One-to-many |
@@ -624,6 +848,7 @@ Admin and system audit trail.
 | `jobs` | `saved_jobs` | One-to-many |
 | `users` | `applied_jobs` | One-to-many |
 | `jobs` | `applied_jobs` | One-to-many |
+| `cover_letters` | `applied_jobs` | One-to-many optional application link |
 | `users` | `job_matches` | One-to-many |
 | `jobs` | `job_matches` | One-to-many |
 | `cvs` | `job_matches` | One-to-many |
@@ -635,6 +860,7 @@ Admin and system audit trail.
 | `interview_sessions` | `interview_questions` | One-to-many |
 | `users` | `cover_letters` | One-to-many |
 | `jobs` | `cover_letters` | One-to-many |
+| `cover_letters` | `cover_letter_insights` | One-to-many |
 | `cover_letters` | `cover_letter_versions` | One-to-many |
 | `users` | `ai_logs` | One-to-many |
 | `rag_documents` | `rag_chunks` | One-to-many |
@@ -650,10 +876,10 @@ Use this checklist before creating any module. A module is correct only if it to
 | --- | --- | --- |
 | `auth` | `users`, `roles` | `profiles`, `notification_settings` |
 | `users` | `users`, `activity_logs` | `profiles`, `user_skills` |
-| `profiles` | `profiles` | `users`, `career_paths` |
+| `profiles` | `profiles`, `profile_experiences`, `profile_education`, `user_preferences`, `user_achievements` | `users`, `career_paths`, `education_level`, `experience_year`, `current_status` |
 | `skills` | `skills`, `user_skills` | `courses`, `jobs`, `career_paths` |
 | `careerPaths` | `career_paths`, `career_path_skills` | `skills`, `courses` |
-| `courses` | `courses`, `course_skills` | `skills`, `career_paths` |
+| `courses` | `courses`, `course_categories`, `course_skills`, `saved_courses`, `course_enrollments` | `skills`, `career_paths`, `users` |
 | `cvs` | `cvs`, `cv_skills` | `skills`, `cv_analyses` |
 | `cvAnalyses` | `cv_analyses` | `cvs`, `skills`, `ai_logs` |
 | `jobs` | `jobs` | `skills`, `api_sync_runs` |
@@ -662,7 +888,7 @@ Use this checklist before creating any module. A module is correct only if it to
 | `jobMatches` | `job_matches` | `jobs`, `cvs`, `cv_analyses`, `skills`, `user_skills` |
 | `roadmaps` | `roadmaps`, `roadmap_steps` | `career_paths`, `skills`, `courses` |
 | `interviews` | `interview_sessions`, `interview_questions` | `jobs`, `career_paths`, `ai_logs` |
-| `coverLetters` | `cover_letters`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
+| `coverLetters` | `cover_letters`, `cover_letter_insights`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
 | `chat` | `chat_sessions`, `chat_messages` | `rag_documents`, `rag_chunks`, `ai_logs` |
 | `notifications` | `notification_settings` | `users` |
 | `ai` | `ai_logs` | Feature tables that requested the AI action |

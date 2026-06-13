@@ -10,9 +10,27 @@ https://mcp.supabase.com/mcp
 
 After OAuth is completed and the session is reloaded, Supabase MCP tools should be available for applying and verifying schema changes.
 
-Supabase CLI is not installed on this machine right now.
+Supabase CLI is installed locally in this project as a dev dependency:
 
-The configured Supabase project host could not be resolved by DNS from this machine during setup, so Storage buckets and database tables were not created remotely in this run. Re-run the setup when the Supabase project URL resolves correctly.
+```txt
+npx supabase --version
+```
+
+Current project ref:
+
+```txt
+siklkhhiporcupiqxhui
+```
+
+Local Supabase Postgres was initialized and the migration was applied successfully. Remote Storage buckets were also initialized through the Supabase service client.
+
+Remote database table upload is still waiting on Supabase CLI or MCP authentication. The CLI reported:
+
+```txt
+Access token not provided. Supply an access token by running `supabase login` or setting the SUPABASE_ACCESS_TOKEN environment variable.
+```
+
+The older project URL typo has been corrected in `.env`.
 
 ## What To Apply
 
@@ -26,7 +44,44 @@ Use one of these paths:
 
 1. Supabase MCP `execute_sql`, preferred when available.
 2. Supabase Dashboard SQL Editor.
-3. Supabase CLI after installing and linking the project.
+3. Supabase CLI after login and project linking.
+
+## Local CLI Commands
+
+```powershell
+npm run supabase:start:db
+npm run supabase:verify:local
+```
+
+The full local stack may need Docker Desktop settings on Windows. If Analytics fails, local database work can still use:
+
+```powershell
+npm run supabase:start:db
+```
+
+## Remote CLI Commands
+
+Create a Supabase access token from the dashboard, then run:
+
+```powershell
+npx supabase login --token YOUR_SUPABASE_ACCESS_TOKEN
+npm run supabase:link
+npm run supabase:push
+```
+
+To push both schema migrations and mock data:
+
+```powershell
+npm run supabase:push:with-seed
+```
+
+Or set the token only for the current PowerShell session:
+
+```powershell
+$env:SUPABASE_ACCESS_TOKEN="YOUR_SUPABASE_ACCESS_TOKEN"
+npm run supabase:link
+npm run supabase:push:with-seed
+```
 
 ## Verification Queries
 
@@ -77,3 +132,14 @@ order by extname;
 Use database tables for searchable data, relational data, statuses, JSON AI output, and embeddings.
 
 Use Storage for binary files only. Database rows should keep the storage path and metadata.
+
+## Auth Decision
+
+Authentication is handled by the Node.js/Express backend, not Supabase Auth.
+
+The `public.users` table contains `password_hash`. Backend auth services should:
+
+- Hash passwords before insert/update.
+- Never return `password_hash` in API responses.
+- Issue and verify backend JWTs with `JWT_SECRET`.
+- Use Supabase as database/storage only for auth data persistence.
