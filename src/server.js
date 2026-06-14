@@ -1,10 +1,12 @@
 require('dotenv').config();
 
+const path = require('path');
 const express = require('express');
 const cors = require('cors');
 
 const { supabase, isConfigured } = require('./config/supabase');
 const errorHandler = require('./common/errors/errorHandler');
+const ragRoutes = require('./modules/rag/rag.routes');
 const testRoutes = require('./modules/test/test.routes');
 
 const app = express();
@@ -27,6 +29,13 @@ app.get('/', (req, res) => {
 });
 
 app.use('/test', testRoutes);
+app.use('/api/v1/rag', ragRoutes);
+
+app.get('/openapi/rag.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-rag.openapi.json'),
+  );
+});
 
 app.use(errorHandler);
 
