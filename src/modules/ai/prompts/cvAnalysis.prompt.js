@@ -27,6 +27,67 @@ const CV_ANALYSIS_RESPONSE_SCHEMA = {
   },
 };
 
+const CV_ANALYSIS_GEMINI_SCHEMA = {
+  type: 'object',
+  properties: {
+    score: { type: 'integer', minimum: 0, maximum: 100 },
+    summary: { type: 'string' },
+    strengths: { type: 'array', items: { type: 'string' } },
+    weaknesses: { type: 'array', items: { type: 'string' } },
+    suggestions: { type: 'array', items: { type: 'string' } },
+    detected_skills: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          category: { type: 'string' },
+          level: { type: 'string' },
+          confidence: { type: 'number', minimum: 0, maximum: 1 },
+          evidence: { type: 'string' },
+        },
+        required: ['name', 'category', 'level', 'confidence', 'evidence'],
+      },
+    },
+    missing_skills: { type: 'array', items: { type: 'string' } },
+    recommended_roles: { type: 'array', items: { type: 'string' } },
+    interview_focus: { type: 'array', items: { type: 'string' } },
+    job_keywords: { type: 'array', items: { type: 'string' } },
+    extracted: {
+      type: 'object',
+      properties: {
+        experience_summary: { type: 'object' },
+        education_summary: { type: 'object' },
+        projects: { type: 'array', items: { type: 'string' } },
+        certifications: { type: 'array', items: { type: 'string' } },
+        languages: { type: 'array', items: { type: 'string' } },
+        contact: { type: 'object' },
+      },
+      required: [
+        'experience_summary',
+        'education_summary',
+        'projects',
+        'certifications',
+        'languages',
+        'contact',
+      ],
+    },
+  },
+  required: [
+    'score',
+    'summary',
+    'strengths',
+    'weaknesses',
+    'suggestions',
+    'detected_skills',
+    'missing_skills',
+    'recommended_roles',
+    'interview_focus',
+    'job_keywords',
+    'extracted',
+  ],
+};
+
 const safeValue = (value) => value || null;
 
 const buildProfileContext = (profile) => ({
@@ -72,6 +133,7 @@ const buildCvAnalysisMessages = ({ profile, cvText, ragContext }) => {
         '- missing_skills, recommended_roles, interview_focus, and job_keywords must be arrays of strings.',
         '- extracted must summarize facts found in the CV, not guesses.',
         '- Use the RAG context as evaluation guidance when it is relevant.',
+        '- Keep arrays concise: detected_skills max 12, suggestions max 8, projects max 8, certifications max 8.',
         '',
         'User register/profile data:',
         profileText,
@@ -88,5 +150,6 @@ const buildCvAnalysisMessages = ({ profile, cvText, ragContext }) => {
 
 module.exports = {
   CV_ANALYSIS_RESPONSE_SCHEMA,
+  CV_ANALYSIS_GEMINI_SCHEMA,
   buildCvAnalysisMessages,
 };

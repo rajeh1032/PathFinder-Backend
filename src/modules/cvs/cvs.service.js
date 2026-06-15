@@ -3,8 +3,11 @@ const path = require('path');
 
 const AppError = require('../../common/errors/AppError');
 const logger = require('../../common/utils/logger');
-const { buildCvAnalysisMessages } = require('../ai/prompts/cvAnalysis.prompt');
-const { generateJsonCompletion } = require('../ai/openai.service');
+const {
+  CV_ANALYSIS_GEMINI_SCHEMA,
+  buildCvAnalysisMessages,
+} = require('../ai/prompts/cvAnalysis.prompt');
+const { generateJsonCompletion } = require('../ai/ai.service');
 const { getRagContextForFeature } = require('../rag/rag.service');
 const cvParserService = require('./cvParser.service');
 const cvsRepository = require('./cvs.repository');
@@ -25,10 +28,14 @@ const buildCvStoragePath = ({ userId, originalname }) => {
   return `${userId}/${Date.now()}-${crypto.randomUUID()}-${safeName || 'cv'}.pdf`;
 };
 
-const assertAuthenticatedUser = (user) => {
-  if (!user?.id) {
+const getAuthenticatedUserId = (user) => {
+  const userId = user?.id || user?.userId;
+
+  if (!userId) {
     throw new AppError('Authentication required', 401);
   }
+
+  return userId;
 };
 
 const assertValidCvFile = (file) => {
@@ -198,11 +205,11 @@ const upsertDetectedSkills = async ({ userId, cvId, detectedSkills }) => {
 };
 
 const analyzeCv = async ({ file, user }) => {
-  assertAuthenticatedUser(user);
+  const userId = getAuthenticatedUserId(user);
   assertValidCvFile(file);
 
   const storagePath = buildCvStoragePath({
-    userId: user.id,
+    userId,
     originalname: file.originalname,
   });
 
@@ -216,7 +223,7 @@ const analyzeCv = async ({ file, user }) => {
 
   try {
     cv = await cvsRepository.createCv({
-      user_id: user.id,
+      user_id: userId,
       storage_path: storagePath,
       original_name: file.originalname,
       mime_type: file.mimetype,
@@ -232,7 +239,7 @@ const analyzeCv = async ({ file, user }) => {
     });
 
     const [profileContext, ragContext] = await Promise.all([
-      formatUserContext(user.id),
+      formatUserContext(userId),
       getRagContextForFeature('cv_analysis'),
     ]);
 
@@ -243,15 +250,16 @@ const analyzeCv = async ({ file, user }) => {
     });
 
     const aiResult = await generateJsonCompletion({
-      userId: user.id,
+      userId,
       feature: 'cv_analysis',
       messages,
       responseSchemaHint: 'CV_ANALYSIS_RESPONSE_SCHEMA',
+      responseJsonSchema: CV_ANALYSIS_GEMINI_SCHEMA,
     });
 
     const normalizedAnalysis = normalizeAnalysis(aiResult.data);
     const detectedSkills = await upsertDetectedSkills({
-      userId: user.id,
+      userId,
       cvId: cv.id,
       detectedSkills: normalizedAnalysis.detected_skills,
     });
@@ -308,9 +316,9 @@ const analyzeCv = async ({ file, user }) => {
 };
 
 const getLatestAnalysis = async (user) => {
-  assertAuthenticatedUser(user);
+  const userId = getAuthenticatedUserId(user);
 
-  const latest = await cvsRepository.findLatestCompletedAnalysisForUser(user.id);
+  const latest = await cvsRepository.findLatestCompletedAnalysisForUser(userId);
   const analysis = Array.isArray(latest?.cv_analyses)
     ? latest.cv_analyses[0]
     : latest?.cv_analyses;
@@ -333,9 +341,9 @@ const getLatestAnalysis = async (user) => {
 };
 
 const getStatus = async (user) => {
-  assertAuthenticatedUser(user);
+  const userId = getAuthenticatedUserId(user);
 
-  const latestCv = await cvsRepository.findLatestCvForUser(user.id);
+  const latestCv = await cvsRepository.findLatestCvForUser(userId);
 
   if (!latestCv) {
     return {
