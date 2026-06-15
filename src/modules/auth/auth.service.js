@@ -29,6 +29,16 @@ const getLookupId = async (client, table, column, value, label) => {
   return data.id;
 };
 
+const sanitizeUser = (user) => {
+  if (!user) {
+    return user;
+  }
+
+  const safeUser = { ...user };
+  delete safeUser.password_hash;
+  return safeUser;
+};
+
 const createUser = async (userData) => {
   const client = ensureSupabase();
   //TODO: check email uniqueness
@@ -204,7 +214,7 @@ const loginUser = async (email, password) => {
   );
 
   // TODO: Return user data and tokens
-  return { user: updatedUser, accessToken, refreshToken };
+  return { user: sanitizeUser(updatedUser), accessToken, refreshToken };
 };
 
 module.exports = {
