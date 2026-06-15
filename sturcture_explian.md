@@ -38,7 +38,7 @@ src/
 │   └── utils/
 │
 ├── config/
-│   ├── openai.js
+│   ├── gemini.js
 │   ├── storage.js
 │   └── supabase.js
 │
