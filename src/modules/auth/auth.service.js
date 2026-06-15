@@ -2,6 +2,7 @@ const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../../common/utils/token.js');
+const { cli } = require('winston/lib/winston/config/index.js');
 
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
@@ -44,7 +45,14 @@ const createUser = async (userData) => {
   }
 
   //TODO: hash password
-  const hashedPassword = await bcrypt.hash(userData.password, 12); // Replace with actual hashing logic
+  const hashedPassword = await bcrypt.hash(userData.password, 12);
+  const roleID = await getLookupId(
+    client,
+    'roles',
+    'name',
+    userData.role,
+    'user role',
+  );
 
   //TODO: create user in database
   const { data: newUser, error: insertError } = await client
@@ -58,7 +66,7 @@ const createUser = async (userData) => {
       last_active_at: new Date(),
       last_login_at: new Date(),
       is_active: true,
-      role_id: '506e5db9-9f35-4b76-9cca-cc08fa9e420a',
+      role_id: roleID || '506e5db9-9f35-4b76-9cca-cc08fa9e420a',
     })
     .select('*')
     .single();
@@ -94,8 +102,8 @@ const createUser = async (userData) => {
     'career_paths',
     'title',
     userData.targetCareer,
-    'Target Path'
-  )
+    'Target Path',
+  );
 
   const { data: userProfile, error: profileError } = await client
     .from('profiles')
@@ -104,7 +112,7 @@ const createUser = async (userData) => {
       education_level_id: educationLevelId,
       experience_year_id: experienceYearId,
       current_status_id: currentStatusId,
-      target_career_id:careerPathId,
+      target_career_id: careerPathId,
       university: userData.university || '',
       major: userData.major || '',
       location: userData.location || '',
@@ -191,11 +199,24 @@ const loginUser = async (email, password) => {
     );
   }
 
+  //* get the role of the user
+  const { data: role, error } = await client
+    .from('roles')
+    .select('name')
+    .eq('id', user.role_id)
+    .maybeSingle();
+
+  if (error) {
+    throw new AppError(error.message, 500);
+  }
+
+  console.log(role.name);
+
   //TODO: Genereate access token and refresh token for the user
   const accessToken = await generateToken({
     userId: user.id,
     email: user.email,
-    role: 'user',
+    role: role.name,
   });
 
   const refreshToken = await generateToken(
@@ -207,7 +228,115 @@ const loginUser = async (email, password) => {
   return { user: updatedUser, accessToken, refreshToken };
 };
 
+const getMe = async (userId) => {
+  const client = ensureSupabase();
+
+  //TODO: find user by id
+  let { data: user, error: userFetchError } = await client
+    .from('users')
+    .select('name,email,is_active,created_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userFetchError) {
+    throw new AppError(userFetchError.message, 500);
+  }
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  //TODO: get profile of the user
+  const { data: profile, error } = await client
+    .from('profiles')
+    .select(
+      `
+    university,major,location,headline,bio,avatar_url,
+    education_level (
+      id,
+      education_level
+    ),
+    experience_year (
+      id,
+      experience_level
+    ),
+    current_status (
+      id,
+      current_status
+    ),
+    career_paths (
+      id,
+      title
+    )
+  `,
+    )
+    .eq('user_id', userId)
+    .single();
+
+  if (error) {
+    throw new AppError(error.message, 500);
+  }
+
+  user.profile = profile;
+
+  return user;
+};
+
+const changePassword = async (userId, currentPassword, newPassword) => {
+  const client = ensureSupabase();
+
+  // Get user
+  const { data: user, error: fetchError } = await client
+    .from('users')
+    .select('id, password_hash')
+    .eq('id', userId)
+    .single();
+
+  if (fetchError || !user) {
+    throw new AppError('User not found', 404);
+  }
+  
+  // Verify current password
+  const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+
+  if (!isValid) {
+    throw new AppError('Current password is incorrect', 400);
+  }
+
+  // Prevent same password
+  const isSamePassword = await bcrypt.compare(newPassword, user.password_hash);
+
+  if (isSamePassword) {
+    throw new AppError(
+      'New password must be different from current password',
+      400,
+    );
+  }
+
+  // Hash new password
+  const hashedPassword = await bcrypt.hash(newPassword, 12);
+
+  // Update password
+  const { error: updateError } = await client
+    .from('users')
+    .update({
+      password_hash: hashedPassword,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+
+  if (updateError) {
+    throw new AppError(updateError.message, 500);
+  }
+
+  return {
+    message: 'Password changed successfully',
+  };
+};
+
 module.exports = {
   createUser,
   loginUser,
+  getMe,
+  changePassword,
 };

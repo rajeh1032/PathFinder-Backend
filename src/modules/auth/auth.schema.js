@@ -11,7 +11,7 @@ const registerSchema = Joi.object({
   educationLevel: Joi.string().required(),
   experienceYear: Joi.string().required(),
   currentStatus: Joi.string().required(),
-  targetCareer:Joi.string().required(),
+  targetCareer: Joi.string().required(),
 });
 
 const loginSchema = Joi.object({
@@ -19,8 +19,13 @@ const loginSchema = Joi.object({
   password: Joi.string().required(),
 });
 
+const changePasswordSchema = Joi.object({
+  password: Joi.string().min(8).required(),
+  newPassword: Joi.string().min(8).required(),
+});
 
 module.exports = {
   registerSchema,
   loginSchema,
+  changePasswordSchema,
 };

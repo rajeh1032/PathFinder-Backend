@@ -2,7 +2,12 @@ const { sendSuccess, sendError } = require('../../common/utils/apiResponse.js');
 const asyncHandler = require('../../common/utils/asyncHandler.js');
 const logger = require('../../common/utils/logger');
 
-const { createUser,loginUser } = require('./auth.service.js');
+const {
+  createUser,
+  loginUser,
+  getMe,
+  changePassword,
+} = require('./auth.service.js');
 
 const register = asyncHandler(async (req, res) => {
   const user = await createUser(req.body);
@@ -25,7 +30,32 @@ const login = asyncHandler(async (req, res) => {
   return sendSuccess(res, { user }, 'Login successful :)');
 });
 
+const getUser = asyncHandler(async (req, res) => {
+  const user = await getMe(req.user.userId);
+
+  if (!user) {
+    return sendError(res, {}, 'User Not Found', 404);
+  }
+
+  return sendSuccess(res, { user });
+});
+
+const changeUserPassword = asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const password = req.body.password;
+  const newPassword = req.body.newPassword;
+  const message = await changePassword(userId, password, newPassword);
+
+  if (!message) {
+    return sendError(res, {}, 'Something Went wrong :(');
+  }
+
+  return sendSuccess(res, {}, 'Password changed :)');
+});
+
 module.exports = {
   register,
   login,
+  getUser,
+  changeUserPassword,
 };
