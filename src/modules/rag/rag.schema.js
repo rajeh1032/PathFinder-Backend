@@ -6,6 +6,7 @@ const RAG_DOCUMENT_TYPES = [
   'job_matching',
   'cover_letter',
   'chat',
+  'roadmap',
   'general',
 ];
 
