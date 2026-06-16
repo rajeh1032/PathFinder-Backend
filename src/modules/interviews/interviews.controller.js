@@ -11,7 +11,7 @@ const listCareerPaths = asyncHandler(async (req, res) => {
 
 const createInterviewSession = asyncHandler(async (req, res) => {
   const result = await interviewsService.createInterviewSession({
-    userId: req.user?.id || req.body.user_id || null,
+    userId: req.user?.userId || null,
     payload: req.body,
   });
 

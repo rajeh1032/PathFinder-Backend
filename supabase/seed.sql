@@ -629,8 +629,8 @@ on conflict (cv_id, skill_id) do update set source = excluded.source;
 
 insert into public.cv_analyses (id, cv_id, score, model, summary, strengths, weaknesses, suggestions, detected_skills, extracted, generated_by_type, status, reviewed_by_admin_id, reviewed_at)
 values
-  ('72000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 78, 'gpt-4.1-mini', 'Good frontend foundation with room to improve TypeScript and testing.', '["HTML/CSS foundation","React projects","Clear education section"]', '["No TypeScript","Few measurable achievements"]', '["Add TypeScript project","Add project metrics","Add testing basics"]', '["HTML","CSS","JavaScript","React"]', '{"education":"Computer Science","projects":2}', 'ai', 'reviewed', '10000000-0000-0000-0000-000000000001', now()),
-  ('72000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 71, 'gpt-4.1-mini', 'Promising backend beginner profile needing stronger API projects.', '["Node.js basics","SQL interest","Career motivation"]', '["Limited production projects","Needs auth/security practice"]', '["Build REST API","Add PostgreSQL schema project","Learn authentication"]', '["Node.js","PostgreSQL","REST APIs"]', '{"education":"ITI","projects":1}', 'ai', 'completed', null, null)
+  ('72000000-0000-0000-0000-000000000001', '70000000-0000-0000-0000-000000000001', 78, 'gemini-3.1-flash-lite', 'Good frontend foundation with room to improve TypeScript and testing.', '["HTML/CSS foundation","React projects","Clear education section"]', '["No TypeScript","Few measurable achievements"]', '["Add TypeScript project","Add project metrics","Add testing basics"]', '["HTML","CSS","JavaScript","React"]', '{"education":"Computer Science","projects":2}', 'ai', 'reviewed', '10000000-0000-0000-0000-000000000001', now()),
+  ('72000000-0000-0000-0000-000000000002', '70000000-0000-0000-0000-000000000002', 71, 'gemini-3.1-flash-lite', 'Promising backend beginner profile needing stronger API projects.', '["Node.js basics","SQL interest","Career motivation"]', '["Limited production projects","Needs auth/security practice"]', '["Build REST API","Add PostgreSQL schema project","Learn authentication"]', '["Node.js","PostgreSQL","REST APIs"]', '{"education":"ITI","projects":1}', 'ai', 'completed', null, null)
 on conflict (cv_id) do update set
   score = excluded.score,
   summary = excluded.summary,
@@ -903,11 +903,11 @@ on conflict (id) do update set
 
 insert into public.ai_logs (id, user_id, feature, model, prompt, response, tokens_used, latency_ms, cost, status, error_message, request_payload, response_payload)
 values
-  ('d0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 'cv_analysis', 'gpt-4.1-mini', 'Analyze Nour CV', 'Score: 78', 950, 1200, 0.004200, 'success', null, '{"cvId":"70000000-0000-0000-0000-000000000001"}', '{"score":78}'),
-  ('d0000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000003', 'cv_analysis', 'gpt-4.1-mini', 'Analyze Omar CV', 'Score: 71', 870, 1100, 0.003900, 'success', null, '{"cvId":"70000000-0000-0000-0000-000000000002"}', '{"score":71}'),
-  ('d0000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', 'job_match', 'gpt-4.1-mini', 'Explain frontend match', 'Strong frontend match.', 320, 600, 0.001200, 'success', null, '{"jobId":"90000000-0000-0000-0000-000000000001"}', '{"match":82}'),
-  ('d0000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000002', 'chat', 'gpt-4.1-mini', 'What next after JavaScript?', 'Learn React and REST APIs.', 210, 500, 0.000900, 'success', null, '{}', '{}'),
-  ('d0000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000003', 'cover_letter', 'gpt-4.1-mini', 'Generate cover letter', 'Dear ApiWorks team...', 540, 900, 0.002100, 'success', null, '{}', '{}')
+  ('d0000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', 'cv_analysis', 'gemini-3.1-flash-lite', 'Analyze Nour CV', 'Score: 78', 950, 1200, 0.004200, 'success', null, '{"cvId":"70000000-0000-0000-0000-000000000001"}', '{"score":78}'),
+  ('d0000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000003', 'cv_analysis', 'gemini-3.1-flash-lite', 'Analyze Omar CV', 'Score: 71', 870, 1100, 0.003900, 'success', null, '{"cvId":"70000000-0000-0000-0000-000000000002"}', '{"score":71}'),
+  ('d0000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', 'job_match', 'gemini-3.1-flash-lite', 'Explain frontend match', 'Strong frontend match.', 320, 600, 0.001200, 'success', null, '{"jobId":"90000000-0000-0000-0000-000000000001"}', '{"match":82}'),
+  ('d0000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000002', 'chat', 'gemini-3.1-flash-lite', 'What next after JavaScript?', 'Learn React and REST APIs.', 210, 500, 0.000900, 'success', null, '{}', '{}'),
+  ('d0000000-0000-0000-0000-000000000005', '10000000-0000-0000-0000-000000000003', 'cover_letter', 'gemini-3.1-flash-lite', 'Generate cover letter', 'Dear ApiWorks team...', 540, 900, 0.002100, 'success', null, '{}', '{}')
 on conflict (id) do update set status = excluded.status, response = excluded.response;
 
 insert into public.rag_documents (id, title, type, source, content, storage_path, vector_id, index_status, index_error, is_active, uploaded_by)
@@ -939,7 +939,7 @@ on conflict (id) do update set status = excluded.status, jobs_added = excluded.j
 
 insert into public.system_settings (id, setting_key, setting_value, type, description, updated_by)
 values
-  ('f2000000-0000-0000-0000-000000000001', 'ai.default_model', '"gpt-4.1-mini"', 'string', 'Default OpenAI model for MVP AI features', '10000000-0000-0000-0000-000000000001'),
+  ('f2000000-0000-0000-0000-000000000001', 'ai.default_model', '"gemini-3.1-flash-lite"', 'string', 'Default Gemini model for MVP AI features', '10000000-0000-0000-0000-000000000001'),
   ('f2000000-0000-0000-0000-000000000002', 'jobs.match_threshold', '65', 'number', 'Minimum match percentage considered recommended', '10000000-0000-0000-0000-000000000001'),
   ('f2000000-0000-0000-0000-000000000003', 'features.voice_coach_enabled', 'false', 'boolean', 'Voice coach feature flag for post-MVP', '10000000-0000-0000-0000-000000000001')
 on conflict (setting_key) do update set

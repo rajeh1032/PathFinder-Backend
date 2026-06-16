@@ -1,11 +1,50 @@
 const AppError = require('../../common/errors/AppError');
-const aiLogsService = require('../ai/ai.service');
-const openaiService = require('../ai/openai.service');
+const geminiService = require('../ai/gemini.service');
 const ragService = require('../rag/rag.service');
 const interviewsRepository = require('./interviews.repository');
 
 const CACHE_SIMILARITY_THRESHOLD = 0.9;
 const MIN_INTERVIEW_OUTPUT_TOKENS = 4096;
+const INTERVIEW_QUESTIONS_GEMINI_SCHEMA = {
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          question_order: { type: 'integer' },
+          question: { type: 'string' },
+          type: { type: 'string' },
+          skill: { type: 'string' },
+          options: {
+            type: 'array',
+            items: { type: 'string' },
+          },
+          correct_option_index: { type: 'integer' },
+        },
+        required: [
+          'question_order',
+          'question',
+          'type',
+          'skill',
+          'options',
+          'correct_option_index',
+        ],
+        propertyOrdering: [
+          'question_order',
+          'question',
+          'type',
+          'skill',
+          'options',
+          'correct_option_index',
+        ],
+      },
+    },
+  },
+  required: ['questions'],
+  propertyOrdering: ['questions'],
+};
 
 const normalizeText = (value) =>
   String(value || '')
@@ -172,11 +211,32 @@ const buildUserPrompt = ({ requestText, totalQuestions, interviewType }) =>
     `Request text:\n${requestText}`,
   ].join('\n\n');
 
+const buildUserPromptWithExclusions = ({
+  requestText,
+  totalQuestions,
+  interviewType,
+  excludedQuestions = [],
+}) => {
+  const exclusionBlock = excludedQuestions.length
+    ? [
+        'Do not repeat any of the following questions or closely paraphrase them:',
+        ...excludedQuestions.slice(0, 30).map((question, index) => `${index + 1}. ${question}`),
+      ].join('\n')
+    : 'No prior questions were provided.';
+
+  return [
+    buildUserPrompt({ requestText, totalQuestions, interviewType }),
+    exclusionBlock,
+    'If needed, change the angle, wording, scenario, or skill focus so the set is meaningfully different from prior sessions.',
+  ].join('\n\n');
+};
+
 const buildFallbackQuestions = ({
   totalQuestions,
   careerPath,
   interviewType,
   skills,
+  excludedQuestions = [],
 }) => {
   const skillNames = skills.length ? skills.map((skill) => skill.name) : [careerPath.title];
   const templatesByType = {
@@ -206,19 +266,32 @@ const buildFallbackQuestions = ({
     ],
   };
   const templates = templatesByType[interviewType] || templatesByType.technical;
+  const excludedSet = new Set(
+    (excludedQuestions || []).map((question) => normalizeText(question).toLowerCase()),
+  );
 
   const questions = [];
   for (let index = 0; index < totalQuestions; index += 1) {
     const skill = skillNames[index % skillNames.length];
     const template = templates[index % templates.length];
+    let questionText = template(skill);
+    let variantIndex = 1;
+
+    while (
+      excludedSet.has(normalizeText(questionText).toLowerCase()) &&
+      variantIndex <= 3
+    ) {
+      questionText = `${template(skill)} (variant ${variantIndex})`;
+      variantIndex += 1;
+    }
 
     questions.push({
       question_order: index + 1,
-      question: template(skill),
+      question: questionText,
       type: interviewType,
       skill,
       options: buildMcqOptions({
-        question: template(skill),
+        question: questionText,
         skill,
         interviewType,
         careerPath,
@@ -317,14 +390,13 @@ const computeSignature = (questions = []) =>
     .filter(Boolean)
     .join('||');
 
-const hasUserAlreadyUsedQuestionSet = async (userId, questionSignature) => {
-  if (!questionSignature) {
-    return false;
-  }
-
+const getUserQuestionHistory = async (userId) => {
   const previousSessions = await interviewsRepository.listUserInterviewSessions(userId);
   if (!previousSessions.length) {
-    return false;
+    return {
+      signatures: new Set(),
+      questions: [],
+    };
   }
 
   const sessionIds = previousSessions.map((session) => session.id);
@@ -339,15 +411,31 @@ const hasUserAlreadyUsedQuestionSet = async (userId, questionSignature) => {
     return acc;
   }, {});
 
-  return Object.values(questionsBySession).some((sessionQuestions) => {
+  const signatures = new Set();
+  const questions = [];
+
+  Object.values(questionsBySession).forEach((sessionQuestions) => {
+    const ordered = sessionQuestions.sort((left, right) => left.question_order - right.question_order);
     const signature = computeSignature(
-      sessionQuestions
-        .sort((left, right) => left.question_order - right.question_order)
-        .map((question) => ({ question: question.question })),
+      ordered.map((question) => ({ question: question.question })),
     );
 
-    return signature === questionSignature;
+    if (signature) {
+      signatures.add(signature);
+    }
+
+    ordered.forEach((question) => {
+      const text = normalizeText(question.question);
+      if (text) {
+        questions.push(text);
+      }
+    });
   });
+
+  return {
+    signatures,
+    questions,
+  };
 };
 
 const buildInterviewContext = async ({ userId, careerPathId }) => {
@@ -410,9 +498,13 @@ const createInterviewSession = async ({ userId, payload }) => {
     skills: context.skills,
   });
 
-  const { embedding, model: embeddingModel } = await openaiService.createEmbedding(
-    requestText,
-  );
+  const previousHistory = await getUserQuestionHistory(userId);
+
+  const embeddingResult = await geminiService.embedText({
+    input: requestText,
+  });
+  const embedding = embeddingResult.embeddings?.[0] || [];
+  const embeddingModel = embeddingResult.model;
 
   const cachedSets = await interviewsRepository.listQuestionSetCacheCandidates({
     interviewType: payload.interview_type,
@@ -444,10 +536,7 @@ const createInterviewSession = async ({ userId, payload }) => {
 
   if (bestCache) {
     const cacheQuestionSignature = computeSignature(bestCache.questions || []);
-    const alreadyUsed = await hasUserAlreadyUsedQuestionSet(
-      userId,
-      cacheQuestionSignature,
-    );
+    const alreadyUsed = previousHistory.signatures.has(cacheQuestionSignature);
 
     if (!alreadyUsed) {
       const insertedSession = await interviewsRepository.createInterviewSession({
@@ -505,31 +594,84 @@ const createInterviewSession = async ({ userId, payload }) => {
   }
 
   const ragContext = await ragService.getRagContextForFeature('interview_rules');
+  const generationMaxTokens = Math.max(
+    MIN_INTERVIEW_OUTPUT_TOKENS,
+    payload.total_questions * 220,
+  );
 
-  const systemPrompt = buildSystemPrompt(ragContext);
-  const userPrompt = buildUserPrompt({
-    requestText,
-    totalQuestions: payload.total_questions,
-    interviewType: payload.interview_type,
-  });
-
-  const generationStartedAt = Date.now();
-  const generated = await openaiService.generateJsonCompletion({
-    systemPrompt,
-    userPrompt,
-    maxTokens: Math.max(MIN_INTERVIEW_OUTPUT_TOKENS, payload.total_questions * 220),
-  });
-  const latencyMs = Date.now() - generationStartedAt;
-
-  const normalizedQuestions = normalizeGeneratedQuestions({
-    questions: generated.questions,
-    totalQuestions: payload.total_questions,
-    fallbackContext: {
-      careerPath: context.careerPath,
+  const attemptGeneration = async ({ excludedQuestions = [] }) => {
+    const systemPrompt = buildSystemPrompt(ragContext);
+    const userPrompt = buildUserPromptWithExclusions({
+      requestText,
+      totalQuestions: payload.total_questions,
       interviewType: payload.interview_type,
-      skills: context.skills,
-    },
+      excludedQuestions,
+    });
+
+    const startedAt = Date.now();
+    const generated = await geminiService.generateJsonCompletion({
+      userId,
+      feature: 'interview_session_generation',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+      responseSchemaHint: 'INTERVIEW_QUESTIONS_GEMINI_SCHEMA',
+      responseJsonSchema: INTERVIEW_QUESTIONS_GEMINI_SCHEMA,
+      maxTokens: generationMaxTokens,
+    });
+    const latencyMs = Date.now() - startedAt;
+
+    const normalizedQuestions = normalizeGeneratedQuestions({
+      questions: generated.data?.questions,
+      totalQuestions: payload.total_questions,
+      fallbackContext: {
+        careerPath: context.careerPath,
+        interviewType: payload.interview_type,
+        skills: context.skills,
+      },
+    });
+
+    return {
+      generated,
+      latencyMs,
+      normalizedQuestions,
+      userPrompt,
+    };
+  };
+
+  let generationResult = await attemptGeneration({
+    excludedQuestions: previousHistory.questions,
   });
+
+  let normalizedQuestions = generationResult.normalizedQuestions;
+  let generatedSignature = computeSignature(normalizedQuestions);
+  let retryCount = 0;
+
+  while (
+    previousHistory.signatures.has(generatedSignature) &&
+    retryCount < 2
+  ) {
+    retryCount += 1;
+    const excludedQuestions = [
+      ...previousHistory.questions,
+      ...normalizedQuestions.map((question) => question.question),
+    ];
+
+    generationResult = await attemptGeneration({
+      excludedQuestions,
+    });
+    normalizedQuestions = generationResult.normalizedQuestions;
+    generatedSignature = computeSignature(normalizedQuestions);
+  }
+
+  const latencyMs = generationResult.latencyMs;
 
   const session = await interviewsRepository.createInterviewSession({
     user_id: userId,
@@ -569,33 +711,13 @@ const createInterviewSession = async ({ userId, payload }) => {
       career_path_id: payload.career_path_id,
       interview_type: payload.interview_type,
       skills: context.skills.map((skill) => skill.name),
-      source: 'openai',
+      source: 'gemini',
       request_signature: computeSignature(normalizedQuestions),
       embedding_model: embeddingModel,
     },
   };
 
   await interviewsRepository.createQuestionSetCache(cachePayload);
-
-  await aiLogsService.logAiCall({
-    userId,
-    feature: 'interview_session_generation',
-    model: generated.model || embeddingModel || null,
-    prompt: userPrompt,
-    response: generated.content || JSON.stringify(generated.questions || {}),
-    tokensUsed: generated.tokensUsed || null,
-    latencyMs,
-    status: 'success',
-    requestPayload: {
-      request_text: requestText,
-      career_path_id: payload.career_path_id,
-      interview_type: payload.interview_type,
-      total_questions: payload.total_questions,
-    },
-    responsePayload: {
-      questions: normalizedQuestions,
-    },
-  });
 
   return {
     session_id: session.id,

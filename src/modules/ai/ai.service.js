@@ -1,6 +1,7 @@
 const AppError = require('../../common/errors/AppError');
 const logger = require('../../common/utils/logger');
-const { supabase, isConfigured } = require('../../config/supabase');
+const aiRepository = require('./ai.repository');
+const geminiService = require('./gemini.service');
 
 const logAiCall = async ({
   userId = null,
@@ -16,12 +17,12 @@ const logAiCall = async ({
   requestPayload = {},
   responsePayload = {},
 }) => {
-  if (!isConfigured || !supabase || !feature) {
+  if (!feature) {
     return null;
   }
 
   try {
-    const { error } = await supabase.from('ai_logs').insert({
+    await aiRepository.createAiLog({
       user_id: userId,
       feature,
       model,
@@ -36,23 +37,22 @@ const logAiCall = async ({
       response_payload: responsePayload,
     });
 
-    if (error) {
-      throw new AppError('Failed to save AI log', 500, {
-        code: error.code,
-        hint: error.hint,
-      });
-    }
-
     return true;
   } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+
     logger.warn('AI log insert failed', {
       feature,
       reason: error.message,
     });
+
     return null;
   }
 };
 
 module.exports = {
+  ...geminiService,
   logAiCall,
 };
