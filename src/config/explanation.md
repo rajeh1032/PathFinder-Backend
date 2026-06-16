@@ -4,10 +4,10 @@ This folder contains the environment-driven configuration modules used by the ba
 
 ## Files
 
-### openai.js
+### gemini.js
 
-- Initializes the OpenAI client from environment variables.
-- Exposes the configured client, model settings, and a helper flag for whether OpenAI is ready to use.
+- Initializes the Gemini client from environment variables.
+- Exposes the configured client, generation model, embedding model, and a helper flag for whether Gemini is ready to use.
 
 ### supabase.js
 
@@ -28,13 +28,14 @@ This folder contains the environment-driven configuration modules used by the ba
 
 ## Required environment variables
 
-### OpenAI
+### Gemini
 
-- OPENAI_API_KEY
-- OPENAI_ORGANIZATION (optional)
-- OPENAI_MODEL (optional)
-- OPENAI_MAX_TOKENS (optional)
-- OPENAI_TEMPERATURE (optional)
+- GEMINI_API_KEY
+- GEMINI_MODEL (optional, defaults to `gemini-3.1-flash-lite`)
+- GEMINI_EMBEDDING_MODEL (optional, defaults to `gemini-embedding-001`)
+- GEMINI_EMBEDDING_DIMENSIONS (optional, defaults to `1536`)
+- GEMINI_MAX_OUTPUT_TOKENS (optional)
+- GEMINI_TEMPERATURE (optional)
 
 ### Supabase
 
@@ -54,7 +55,7 @@ This folder contains the environment-driven configuration modules used by the ba
 ## Usage example
 
 ```js
-const { openai, isConfigured } = require('../config/openai');
+const { gemini, isConfigured } = require('../config/gemini');
 const { supabase } = require('../config/supabase');
 const { storageConfig, ensureUploadDir } = require('../config/storage');
 ```

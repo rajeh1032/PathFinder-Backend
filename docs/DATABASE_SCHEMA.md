@@ -410,7 +410,7 @@ AI-generated analysis for a CV. Admin can review, approve, or flag.
 | `id` | `uuid` | Primary key |
 | `cv_id` | `uuid` | Unique FK to `cvs.id` |
 | `score` | `integer` | 0 to 100 |
-| `model` | `text` | OpenAI model |
+| `model` | `text` | Gemini model |
 | `summary` | `text` | AI summary |
 | `strengths` | `jsonb` | Array |
 | `weaknesses` | `jsonb` | Array |
@@ -666,14 +666,14 @@ Unique key: `cover_letter_id`, `version`.
 
 ### `ai_logs`
 
-Trace every OpenAI call for cost, debugging, and safety.
+Trace every Gemini call for cost, debugging, and safety.
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | `uuid` | Primary key |
 | `user_id` | `uuid` | FK to `users.id` |
 | `feature` | `text` | CV analysis, chat, cover letter, etc. |
-| `model` | `text` | OpenAI model |
+| `model` | `text` | Gemini model |
 | `prompt` | `text` | Prompt sent |
 | `response` | `text` | Model response |
 | `tokens_used` | `integer` | Nullable |
@@ -721,7 +721,7 @@ Chunked RAG content with pgvector embedding.
 | `chunk_index` | `integer` | Chunk order |
 | `token_count` | `integer` | Approximate tokens |
 | `vector_id` | `text` | Optional external id |
-| `embedding` | `vector(1536)` | OpenAI `text-embedding-3-small` |
+| `embedding` | `vector(1536)` | Gemini `gemini-embedding-001` with `GEMINI_EMBEDDING_DIMENSIONS=1536` |
 | `metadata` | `jsonb` | Search metadata |
 | `created_at` | `timestamptz` | Default `now()` |
 
