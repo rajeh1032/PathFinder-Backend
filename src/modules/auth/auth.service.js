@@ -60,7 +60,7 @@ const createUser = async (userData) => {
     client,
     'roles',
     'name',
-    userData.role,
+    userData.role || 'user',
     'user role',
   );
 
