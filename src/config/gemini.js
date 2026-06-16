@@ -9,7 +9,7 @@ const config = {
   model: process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite',
   embeddingModel: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
   embeddingDimensions: Number(process.env.GEMINI_EMBEDDING_DIMENSIONS) || 1536,
-  maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 1000,
+  maxOutputTokens: Number(process.env.GEMINI_MAX_OUTPUT_TOKENS) || 8192,
   temperature: Number(process.env.GEMINI_TEMPERATURE) || 0.7,
 };
 

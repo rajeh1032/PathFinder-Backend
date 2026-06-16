@@ -10,6 +10,8 @@ const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 120;
 const PDF_MIME_TYPE = 'application/pdf';
 const PDF_SIGNATURE = Buffer.from('%PDF-');
+const ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE =
+  'An active RAG document for this type already exists. Delete it before adding a new one.';
 
 const normalizeContent = (content) =>
   content
@@ -130,7 +132,19 @@ const assertDocumentExists = (document) => {
   }
 };
 
+const assertActiveDocumentTypeAvailable = async (type, id = null) => {
+  const activeDocument = id
+    ? await ragRepository.findActiveDocumentByTypeExcludingId(type, id)
+    : await ragRepository.findActiveDocumentByType(type);
+
+  if (activeDocument) {
+    throw new AppError(ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE, 409);
+  }
+};
+
 const createRagDocument = async (payload, user = null) => {
+  await assertActiveDocumentTypeAvailable(payload.type);
+
   const content = normalizeContent(payload.content);
   const document = await ragRepository.createDocument({
     title: payload.title,
@@ -159,6 +173,8 @@ const uploadRagDocument = async (payload, file, user = null) => {
   if (!isPdfFile(file)) {
     throw new AppError('Only PDF files are allowed', 415);
   }
+
+  await assertActiveDocumentTypeAvailable(payload.type);
 
   const content = await extractPdfText(file.buffer);
   const storagePath = buildStoragePath({
@@ -226,6 +242,21 @@ const getRagDocumentById = async (id) => {
 const updateRagDocument = async (id, payload) => {
   const existingDocument = await ragRepository.findDocumentById(id);
   assertDocumentExists(existingDocument);
+
+  const nextType = Object.prototype.hasOwnProperty.call(payload, 'type')
+    ? payload.type
+    : existingDocument.type;
+  const nextIsActive = Object.prototype.hasOwnProperty.call(payload, 'is_active')
+    ? payload.is_active
+    : existingDocument.is_active;
+  const typeWillChange =
+    Object.prototype.hasOwnProperty.call(payload, 'type') &&
+    payload.type !== existingDocument.type;
+  const willReactivate = !existingDocument.is_active && nextIsActive === true;
+
+  if (nextIsActive === true && (typeWillChange || willReactivate)) {
+    await assertActiveDocumentTypeAvailable(nextType, id);
+  }
 
   const updatePayload = {};
 

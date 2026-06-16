@@ -1,6 +1,9 @@
 const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 
+const ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE =
+  'An active RAG document for this type already exists. Delete it before adding a new one.';
+
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
     throw new AppError('Supabase is not configured', 500);
@@ -11,6 +14,17 @@ const ensureSupabase = () => {
 
 const handleSupabaseError = (error, message, statusCode = 500) => {
   if (error) {
+    const errorText = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`;
+    if (
+      error.code === '23505' &&
+      errorText.includes('idx_rag_documents_one_active_per_type')
+    ) {
+      throw new AppError(ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE, 409, {
+        code: error.code,
+        hint: error.hint,
+      });
+    }
+
     throw new AppError(message, statusCode, {
       code: error.code,
       hint: error.hint,
@@ -55,6 +69,40 @@ const findDocumentById = async (id) => {
     .maybeSingle();
 
   handleSupabaseError(error, 'Failed to fetch RAG document');
+  return data;
+};
+
+const findActiveDocumentByType = async (type) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('rag_documents')
+    .select('*')
+    .eq('type', type)
+    .eq('is_active', true)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch active RAG document by type');
+  return data;
+};
+
+const findActiveDocumentByTypeExcludingId = async (type, id) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('rag_documents')
+    .select('*')
+    .eq('type', type)
+    .eq('is_active', true)
+    .neq('id', id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  handleSupabaseError(
+    error,
+    'Failed to fetch active RAG document by type',
+  );
   return data;
 };
 
@@ -173,6 +221,8 @@ module.exports = {
   createDocument,
   listDocuments,
   findDocumentById,
+  findActiveDocumentByType,
+  findActiveDocumentByTypeExcludingId,
   findDocumentWithChunksById,
   updateDocument,
   deleteChunksByDocumentId,

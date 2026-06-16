@@ -2,6 +2,8 @@
   "project": "PathFinder AI",
   "database": "Supabase PostgreSQL",
   "storage": "Supabase Storage",
+  "ragDocumentTypes": ["cv_analysis", "course_analysis", "interview", "job_matching", "cover_letter", "chat", "general"],
+  "ragDocumentRules": ["Only one active rag_documents row is allowed per type.", "To replace a type document, delete or deactivate the active row before creating another.", "Inactive historical rows can keep duplicate types."],
   "tables": {
     "roles": ["id", "name", "description", "is_system_role", "created_at", "updated_at"],
     "users": ["id", "name", "email", "password_hash", "role_id", "is_active", "last_login_at", "last_active_at", "created_at", "updated_at"],
