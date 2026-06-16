@@ -8,6 +8,7 @@ const { supabase, isConfigured } = require('./config/supabase');
 const errorHandler = require('./common/errors/errorHandler');
 const coursesRoutes = require('./modules/courses/courses.routes');
 const cvsRoutes = require('./modules/cvs/cvs.routes');
+const interviewsRoutes = require('./modules/interviews/interviews.routes');
 const ragRoutes = require('./modules/rag/rag.routes');
 const authRoutes = require('./modules/auth/auth.routes');
 const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
@@ -39,6 +40,8 @@ app.get('/', (req, res) => {
 });
 app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
+app.use('/api/interviews', interviewsRoutes);
+app.use('/api/v1/interviews', interviewsRoutes);
 app.use('/api/v1/rag', ragRoutes);
 app.use('/api/v1/cvs', cvsRoutes);
 app.use('/api/v1/users', userRoutes);
