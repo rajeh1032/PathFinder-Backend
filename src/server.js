@@ -9,6 +9,7 @@ const errorHandler = require('./common/errors/errorHandler');
 const cvsRoutes = require('./modules/cvs/cvs.routes');
 const ragRoutes = require('./modules/rag/rag.routes');
 const authRoutes = require('./modules/auth/auth.routes');
+const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
 const testRoutes = require('./modules/test/test.routes');
 
 const app = express();
@@ -34,6 +35,7 @@ app.use('/test', testRoutes);
 app.use('/api/v1/rag', ragRoutes);
 app.use('/api/v1/cvs', cvsRoutes);
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/roadmaps', roadmapRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
   res.sendFile(
