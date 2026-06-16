@@ -291,6 +291,7 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | `title` | `text` | Required |
 | `description` | `text` | Course description |
 | `provider` | `text` | Required |
+| `external_id` | `text` | Provider course id, nullable |
 | `url` | `text` | Course URL |
 | `thumbnail_url` | `text` | Optional |
 | `video_url` | `text` | Optional MVP video link |
@@ -299,6 +300,9 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | `category` | `text` | Required |
 | `category_id` | `uuid` | FK to `course_categories.id` |
 | `learning_outcomes` | `jsonb` | Array of expected outcomes |
+| `language` | `text` | Course language inferred from metadata/AI or entered manually |
+| `analysis_status` | `text` | `needs_manual_metadata`, `pending_review`, `approved`, or `rejected`; default `pending_review` |
+| `analysis_confidence` | `numeric(4,3)` | AI metadata extraction confidence from 0 to 1 |
 | `price` | `numeric(10,2)` | Course price, nullable |
 | `currency` | `text` | Example: USD, EGP |
 | `is_free` | `boolean` | Default `true` |
@@ -333,9 +337,20 @@ Required missing table from the handoff. Connects courses to the skills they tea
 | `id` | `uuid` | Primary key |
 | `course_id` | `uuid` | FK to `courses.id` |
 | `skill_id` | `uuid` | FK to `skills.id` |
+| `confidence` | `numeric(4,3)` | Skill extraction confidence from 0 to 1 |
+| `source` | `text` | `ai_analysis`, `admin_manual`, or `imported_metadata`; default `ai_analysis` |
 | `created_at` | `timestamptz` | Default `now()` |
 
 Unique key: `course_id`, `skill_id`.
+
+Course imports use a partial unique index on `(provider, external_id)` where `external_id is not null`.
+Recommendations and roadmap course lookups only use courses where `is_active = true`, `analysis_status = 'approved'`, and `course_skills.confidence >= 0.6` unless `course_skills.source = 'admin_manual'`.
+
+Implemented course API flow:
+
+- `POST /api/v1/courses/import/preview`: admin-only; detects MaharaTech provider/external id, checks duplicates, fetches public metadata, uses `getRagContextForFeature('course_analysis')`, runs AI metadata extraction, and returns matched/unmatched skill previews.
+- `POST /api/v1/courses/import/confirm`: admin-only; saves the approved course and selected `course_skills` mappings. AI does not decide visibility; it only extracts metadata.
+- `GET /api/v1/courses/recommended`: authenticated users; dynamically scores approved active courses against CV missing skills, active roadmap steps, target career skills, and known user skills.
 
 ### `saved_courses`
 

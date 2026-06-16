@@ -6,11 +6,9 @@ This folder contains the environment-driven configuration modules used by the ba
 
 ### gemini.js
 
-- Initializes the Gemini client from environment variables.
-- Exposes the configured client, generation model, embedding model, and a helper flag for whether Gemini is ready to use.
-- Initializes the AI provider configuration from environment variables.
-- Supports Gemini first when `GEMINI_API_KEY` is present, and OpenAI as fallback when `OPENAI_API_KEY` is present.
-- Exposes the configured client, model settings, and a helper flag for whether an AI provider is ready to use.
+- Initializes the Gemini configuration from environment variables.
+- Exposes the configured generation model, embedding model, embedding dimensions, token/temperature settings, and a helper flag for whether Gemini is ready to use.
+- This is the only AI provider config in the repository; there is no `openai.js`.
 
 ### supabase.js
 
@@ -39,19 +37,11 @@ This folder contains the environment-driven configuration modules used by the ba
 - GEMINI_EMBEDDING_DIMENSIONS (optional, defaults to `1536`)
 - GEMINI_MAX_OUTPUT_TOKENS (optional)
 - GEMINI_TEMPERATURE (optional)
-### AI Provider
 
-- GEMINI_API_KEY
-- GEMINI_MODEL (optional)
-- GEMINI_EMBEDDING_MODEL (optional)
-- GEMINI_EMBEDDING_DIMENSIONS (optional)
-- GEMINI_MAX_OUTPUT_TOKENS (optional)
-- GEMINI_TEMPERATURE (optional)
-- OPENAI_API_KEY
-- OPENAI_ORGANIZATION (optional)
-- OPENAI_MODEL (optional)
-- OPENAI_MAX_TOKENS (optional)
-- OPENAI_TEMPERATURE (optional)
+### Auth
+
+- JWT_SECRET
+- JWT_EXPIRES_IN (optional)
 
 ### Supabase
 
