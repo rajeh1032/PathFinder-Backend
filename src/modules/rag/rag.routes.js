@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const path = require('path');
 
 const AppError = require('../../common/errors/AppError');
 const {
@@ -18,17 +19,30 @@ const {
 
 const router = express.Router();
 const MAX_RAG_DOCUMENT_FILE_SIZE = 20 * 1024 * 1024;
+const PDF_MIME_TYPES = new Set([
+  'application/pdf',
+  'application/x-pdf',
+  'application/acrobat',
+  'applications/vnd.pdf',
+]);
+
+const getFileExtension = (filename = '') =>
+  path.extname(filename.trim()).toLowerCase();
+
+const isPdfUploadCandidate = (file) => {
+  const mimetype = (file.mimetype || '').toLowerCase();
+  const extension = getFileExtension(file.originalname || '');
+
+  return PDF_MIME_TYPES.has(mimetype) || extension === '.pdf';
+};
+
 const pdfUpload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: MAX_RAG_DOCUMENT_FILE_SIZE,
   },
   fileFilter: (req, file, cb) => {
-    const isPdf =
-      file.mimetype === 'application/pdf' &&
-      file.originalname.toLowerCase().endsWith('.pdf');
-
-    if (!isPdf) {
+    if (!isPdfUploadCandidate(file)) {
       return cb(new AppError('Only PDF files are allowed', 415));
     }
 

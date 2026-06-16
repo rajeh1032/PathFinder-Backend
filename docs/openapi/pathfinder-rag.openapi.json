@@ -1,0 +1,617 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PathFinder RAG API",
+    "version": "1.0.0",
+    "description": "Import this file into ApiDog to test the PathFinder RAG document endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "RAG Documents",
+      "description": "Create, upload, list, update, and deactivate RAG knowledge documents."
+    }
+  ],
+  "paths": {
+    "/api/v1/rag/documents": {
+      "post": {
+        "tags": ["RAG Documents"],
+        "summary": "Create RAG document from text",
+        "description": "Creates a RAG document manually and indexes its text into chunks.",
+        "operationId": "createRagDocument",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRagDocumentRequest"
+              },
+              "example": {
+                "title": "Frontend Developer CV Tips",
+                "type": "cv_analysis",
+                "source": "manual",
+                "content": "Strong frontend CVs should highlight React, JavaScript, accessibility, performance optimization, testing, and measurable project impact."
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "RAG document created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "get": {
+        "tags": ["RAG Documents"],
+        "summary": "List RAG documents",
+        "description": "Returns RAG documents. Optionally filter by document type.",
+        "operationId": "listRagDocuments",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/RagDocumentType"
+            },
+            "example": "cv_analysis"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RAG documents fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentListSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/rag/documents/upload": {
+      "post": {
+        "tags": ["RAG Documents"],
+        "summary": "Upload PDF RAG document",
+        "description": "Uploads a PDF file, extracts its text, stores the file, and indexes the extracted content into chunks. Maximum PDF size is 20MB.",
+        "operationId": "uploadRagDocument",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadRagDocumentRequest"
+              },
+              "encoding": {
+                "file": {
+                  "contentType": "application/pdf"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "RAG document uploaded successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "413": {
+            "$ref": "#/components/responses/FileTooLargeError"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaTypeError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    },
+    "/api/v1/rag/documents/{id}": {
+      "get": {
+        "tags": ["RAG Documents"],
+        "summary": "Get RAG document by id",
+        "description": "Returns one RAG document with its indexed chunks.",
+        "operationId": "getRagDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RagDocumentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RAG document fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentWithChunksSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "patch": {
+        "tags": ["RAG Documents"],
+        "summary": "Update RAG document",
+        "description": "Updates one or more RAG document fields. If content changes, chunks are regenerated.",
+        "operationId": "updateRagDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RagDocumentId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateRagDocumentRequest"
+              },
+              "example": {
+                "title": "Updated Frontend Developer CV Tips",
+                "content": "Updated guidance: highlight role-specific React projects, measurable outcomes, testing, accessibility, and performance wins."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "RAG document updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      },
+      "delete": {
+        "tags": ["RAG Documents"],
+        "summary": "Deactivate RAG document",
+        "description": "Soft deletes a RAG document by setting is_active to false.",
+        "operationId": "deleteRagDocument",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RagDocumentId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "RAG document deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RagDocumentSuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/ValidationError"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFoundError"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalServerError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "RagDocumentId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "RAG document UUID.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "example": "550e8400-e29b-41d4-a716-446655440000"
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "statusCode": 400,
+              "message": "Validation failed",
+              "details": {
+                "details": [
+                  {
+                    "message": "\"title\" is required",
+                    "path": "title"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "NotFoundError": {
+        "description": "RAG document not found",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "statusCode": 404,
+              "message": "RAG document not found"
+            }
+          }
+        }
+      },
+      "FileTooLargeError": {
+        "description": "PDF file is larger than 20MB",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "statusCode": 413,
+              "message": "PDF file must be 20MB or smaller"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaTypeError": {
+        "description": "Only PDF files are allowed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "statusCode": 415,
+              "message": "Only PDF files are allowed"
+            }
+          }
+        }
+      },
+      "InternalServerError": {
+        "description": "Internal server error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "success": false,
+              "statusCode": 500,
+              "message": "Internal server error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "RagDocumentType": {
+        "type": "string",
+        "enum": [
+          "cv_analysis",
+          "interview",
+          "job_matching",
+          "cover_letter",
+          "chat",
+          "general"
+        ]
+      },
+      "RagDocumentSource": {
+        "type": "string",
+        "enum": ["manual", "upload", "api"]
+      },
+      "CreateRagDocumentRequest": {
+        "type": "object",
+        "required": ["title", "type", "source", "content"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 255,
+            "example": "Frontend Developer CV Tips"
+          },
+          "type": {
+            "$ref": "#/components/schemas/RagDocumentType"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RagDocumentSource"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "example": "Strong frontend CVs should highlight React, JavaScript, accessibility, performance optimization, testing, and measurable project impact."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UploadRagDocumentRequest": {
+        "type": "object",
+        "required": ["title", "file"],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 255,
+            "example": "Uploaded CV Knowledge"
+          },
+          "type": {
+            "$ref": "#/components/schemas/RagDocumentType"
+          },
+          "file": {
+            "type": "string",
+            "format": "binary",
+            "description": "PDF file, maximum 20MB."
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateRagDocumentRequest": {
+        "type": "object",
+        "minProperties": 1,
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 255
+          },
+          "type": {
+            "$ref": "#/components/schemas/RagDocumentType"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RagDocumentSource"
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "is_active": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RagDocument": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/RagDocumentType"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RagDocumentSource"
+          },
+          "content": {
+            "type": "string"
+          },
+          "storage_path": {
+            "type": "string",
+            "nullable": true
+          },
+          "index_status": {
+            "type": "string",
+            "example": "indexed"
+          },
+          "index_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "is_active": {
+            "type": "boolean"
+          },
+          "uploaded_by": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "chunksCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "RagChunk": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rag_document_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "content": {
+            "type": "string"
+          },
+          "chunk_index": {
+            "type": "integer"
+          },
+          "token_count": {
+            "type": "integer"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RagDocumentWithChunks": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/RagDocument"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "chunks": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RagChunk"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RagDocumentSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "RAG document created successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RagDocument"
+          }
+        }
+      },
+      "RagDocumentWithChunksSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "RAG document fetched successfully"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RagDocumentWithChunks"
+          }
+        }
+      },
+      "RagDocumentListSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": true
+          },
+          "message": {
+            "type": "string",
+            "example": "RAG documents fetched successfully"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RagDocument"
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "statusCode": {
+            "type": "integer",
+            "example": 400
+          },
+          "message": {
+            "type": "string",
+            "example": "Validation failed"
+          },
+          "details": {
+            "nullable": true
+          }
+        }
+      }
+    }
+  }
+}
