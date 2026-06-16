@@ -200,7 +200,13 @@ const normalizeCourseRows = (rows) => {
   rows.forEach((row) => {
     const course = getEmbeddedRow(row, 'courses');
 
-    if (!course || course.is_active === false) {
+    if (
+      !course ||
+      course.is_active === false ||
+      course.analysis_status !== 'approved' ||
+      (row.source !== 'admin_manual' &&
+        Number(row.confidence || 0) < 0.6)
+    ) {
       return;
     }
 
@@ -223,6 +229,9 @@ const normalizeCourseRows = (rows) => {
       category: course.category,
       category_id: course.category_id,
       learning_outcomes: course.learning_outcomes,
+      language: course.language,
+      analysis_status: course.analysis_status,
+      analysis_confidence: course.analysis_confidence,
       price: course.price,
       currency: course.currency,
       is_free: course.is_free,

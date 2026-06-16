@@ -144,11 +144,14 @@ const findCoursesForSkillIds = async (skillIds) => {
     .select(
       `
         skill_id,
+        confidence,
+        source,
         courses(
           id,
           title,
           description,
           provider,
+          external_id,
           url,
           thumbnail_url,
           video_url,
@@ -157,6 +160,9 @@ const findCoursesForSkillIds = async (skillIds) => {
           category,
           category_id,
           learning_outcomes,
+          language,
+          analysis_status,
+          analysis_confidence,
           price,
           currency,
           is_free,
