@@ -6,6 +6,7 @@ const cors = require('cors');
 
 const { supabase, isConfigured } = require('./config/supabase');
 const errorHandler = require('./common/errors/errorHandler');
+const interviewsRoutes = require('./modules/interviews/interviews.routes');
 const ragRoutes = require('./modules/rag/rag.routes');
 const testRoutes = require('./modules/test/test.routes');
 
@@ -29,6 +30,8 @@ app.get('/', (req, res) => {
 });
 
 app.use('/test', testRoutes);
+app.use('/api/interviews', interviewsRoutes);
+app.use('/api/v1/interviews', interviewsRoutes);
 app.use('/api/v1/rag', ragRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
