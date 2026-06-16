@@ -912,9 +912,9 @@ on conflict (id) do update set status = excluded.status, response = excluded.res
 
 insert into public.rag_documents (id, title, type, source, content, storage_path, vector_id, index_status, index_error, is_active, uploaded_by)
 values
-  ('e0000000-0000-0000-0000-000000000001', 'Frontend Career Guide', 'career_guide', 'manual', 'Frontend developers should learn HTML, CSS, JavaScript, React, API integration, Git, and TypeScript.', null, null, 'indexed', null, true, '10000000-0000-0000-0000-000000000001'),
-  ('e0000000-0000-0000-0000-000000000002', 'Backend Career Guide', 'career_guide', 'manual', 'Backend developers should learn Node.js, REST APIs, PostgreSQL, authentication, security, testing, and deployment.', null, null, 'indexed', null, true, '10000000-0000-0000-0000-000000000001')
-on conflict (id) do update set title = excluded.title, content = excluded.content, index_status = excluded.index_status, updated_at = now();
+  ('e0000000-0000-0000-0000-000000000001', 'Frontend Career Guide', 'general', 'manual', 'Frontend developers should learn HTML, CSS, JavaScript, React, API integration, Git, and TypeScript.', null, null, 'indexed', null, true, '10000000-0000-0000-0000-000000000001'),
+  ('e0000000-0000-0000-0000-000000000002', 'Backend Career Guide', 'course_analysis', 'manual', 'Backend developers should learn Node.js, REST APIs, PostgreSQL, authentication, security, testing, and deployment.', null, null, 'indexed', null, true, '10000000-0000-0000-0000-000000000001')
+on conflict (id) do update set title = excluded.title, type = excluded.type, content = excluded.content, index_status = excluded.index_status, is_active = excluded.is_active, updated_at = now();
 
 insert into public.rag_chunks (id, rag_document_id, content, chunk_index, token_count, vector_id, embedding, metadata)
 values

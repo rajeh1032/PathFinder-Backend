@@ -2,6 +2,7 @@ const Joi = require('joi');
 
 const RAG_DOCUMENT_TYPES = [
   'cv_analysis',
+  'course_analysis',
   'interview',
   'job_matching',
   'cover_letter',

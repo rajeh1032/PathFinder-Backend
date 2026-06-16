@@ -705,6 +705,10 @@ Documents indexed for RAG.
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 
+Supported `type` values: `cv_analysis`, `course_analysis`, `interview`, `job_matching`, `cover_letter`, `chat`, `general`.
+
+Only one active RAG document is allowed per `type`. The database enforces this with a partial unique index on `rag_documents(type)` where `is_active = true`; inactive/deleted historical rows may keep the same type. To replace the active document for a type, delete or deactivate the existing row first, then create/upload the replacement.
+
 ### `rag_chunks`
 
 Chunked RAG content with pgvector embedding.
