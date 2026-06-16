@@ -16,7 +16,6 @@ const chatRouter = require('./modules/chat/chat.routes');
 
 
 const userRoutes = require('./modules/users/users.routes');
-const chatRouter = require('./modules/chat/chat.routes');
 
 
 
@@ -25,7 +24,6 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
-app.use('/api/chat', chatRouter);
 
 if (isConfigured && supabase) {
   console.log('Supabase connected successfully');
@@ -39,7 +37,7 @@ app.get('/', (req, res) => {
     supabase: isConfigured ? 'connected' : 'not configured',
   });
 });
-
+app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/v1/rag', ragRoutes);
 app.use('/api/v1/cvs', cvsRoutes);

@@ -12,7 +12,6 @@ const PDF_MIME_TYPE = 'application/pdf';
 const PDF_SIGNATURE = Buffer.from('%PDF-');
 const ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE =
   'An active RAG document for this type already exists. Delete it before adding a new one.';
-const PDF_SIGNATURE = Buffer.from('%PDF-');
 
 
 const normalizeContent = (content) =>
