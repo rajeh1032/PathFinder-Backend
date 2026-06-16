@@ -9,6 +9,7 @@ const ragRepository = require('./rag.repository');
 const CHUNK_SIZE = 1200;
 const CHUNK_OVERLAP = 120;
 const PDF_MIME_TYPE = 'application/pdf';
+const PDF_SIGNATURE = Buffer.from('%PDF-');
 const ACTIVE_RAG_DOCUMENT_TYPE_CONFLICT_MESSAGE =
   'An active RAG document for this type already exists. Delete it before adding a new one.';
 
@@ -20,9 +21,15 @@ const normalizeContent = (content) =>
 
 const estimateTokenCount = (text) => Math.ceil(text.length / 4);
 
-const isPdfFile = (file) =>
-  file?.mimetype === PDF_MIME_TYPE &&
-  path.extname(file.originalname || '').toLowerCase() === '.pdf';
+const hasPdfSignature = (buffer) => {
+  if (!Buffer.isBuffer(buffer)) {
+    return false;
+  }
+
+  return buffer.subarray(0, 1024).includes(PDF_SIGNATURE);
+};
+
+const isPdfFile = (file) => hasPdfSignature(file?.buffer);
 
 const buildStoragePath = ({ type, originalname }) => {
   const safeName = path
@@ -178,7 +185,7 @@ const uploadRagDocument = async (payload, file, user = null) => {
   await ragRepository.uploadDocumentFile({
     storagePath,
     buffer: file.buffer,
-    contentType: file.mimetype,
+    contentType: PDF_MIME_TYPE,
   });
 
   try {
