@@ -235,7 +235,7 @@ const mergeMetadata = ({ providerInfo, fetchedMetadata, manualMetadata }) => {
 const hasEnoughMetadataForAnalysis = (metadata) =>
   Boolean(
     metadata.title &&
-      (metadata.description || safeArray(metadata.learning_outcomes).length > 0),
+    (metadata.description || safeArray(metadata.learning_outcomes).length > 0),
   );
 
 const toSkillCatalogForPrompt = (skills) =>
@@ -786,8 +786,8 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
           : 0;
       const careerRatio = targetCareerSkills.length
         ? course.skills.filter((skill) =>
-            targetCareerSkillNames.has(normalizeName(skill.name)),
-          ).length / targetCareerSkills.length
+          targetCareerSkillNames.has(normalizeName(skill.name)),
+        ).length / targetCareerSkills.length
         : 0;
       const levelFit = scoreLevelFit(
         course.level,

@@ -175,6 +175,8 @@ const generateJsonCompletion = async ({
   responseSchemaHint,
   responseJsonSchema,
   model = config.model,
+  maxTokens,
+  temperature,
 }) => {
   const startedAt = Date.now();
   const { contents, systemInstruction } = toGeminiPrompt(messages);
@@ -186,6 +188,8 @@ const generateJsonCompletion = async ({
       contents,
       systemInstruction,
       responseJsonSchema,
+      maxOutputTokens: maxTokens,
+      temperature,
     });
     const latencyMs = Date.now() - startedAt;
 
