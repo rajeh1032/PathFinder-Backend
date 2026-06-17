@@ -1,9 +1,15 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
+const { getRagContextForFeature } = require('../rag/rag.service');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
+// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const getGenAI = () => {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new AppError('GEMINI_API_KEY is not configured', 500);
+  }
+  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+};
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
     throw new AppError('Supabase is not configured', 500);
@@ -163,12 +169,16 @@ async function saveMessage({ sessionId, sender, message, tokens }) {
 
 async function validateSession(sessionId, userId) {
   const client = ensureSupabase();
+  console.log('Validating session:', { sessionId, userId });
   const { data, error } = await client
     .from('chat_sessions')
     .select('id, user_id')
     .eq('id', sessionId)
     .eq('user_id', userId)
+    .neq('status', 'deleted')
     .maybeSingle();
+
+  console.log('Session data:', data, 'Error:', error);
 
   if (error) {
     throwDatabaseError(error, 'Failed to validate chat session');
@@ -205,7 +215,7 @@ async function fetchMessages(sessionId) {
   return data;
 }
 
-function buildSystemPrompt(cv) {
+function buildSystemPrompt(cv, ragContext = '') {
   if (!cv) {
     return `You are a strict AI career mentor.
 You can ONLY answer questions related to the user's CV and career.
@@ -218,9 +228,10 @@ Refuse to answer any other topic.`;
 
 ## YOUR RULES (NEVER BREAK THEM):
 1. You ONLY answer questions about the user's CV, career, skills, job roles, and professional development.
-2. If the user asks about anything else (coding help, general knowledge, jokes, etc.), politely refuse and redirect them to CV-related topics.
+2. If the user asks about anything else, politely refuse and redirect them to CV-related topics.
 3. Always base your answers on the user's actual CV data provided below.
 4. Be concise, professional, and encouraging.
+5. Answer in the user's language (Arabic or English).
 
 ## USER'S CV DATA:
 - **Target Role:** ${cv.analyzed_role ?? 'Not specified'}
@@ -231,53 +242,108 @@ ${cv.extracted_text ?? 'No content extracted'}
 ## CV ANALYSIS RESULT:
 ${cv.analysis_result ? JSON.stringify(cv.analysis_result, null, 2) : 'No analysis available'}
 
-## EXAMPLES OF WHAT YOU CAN HELP WITH:
-- "What skills am I missing for [role]?"
-- "How can I improve my CV score?"
-- "Am I ready for a senior role?"
-- "What should I add to my CV?"
-- "Prepare me for an interview for [role]"
+${ragContext ? `## ADDITIONAL KNOWLEDGE BASE:\n${ragContext}` : ''}
 
-## EXAMPLES OF WHAT YOU MUST REFUSE:
-- "Write me a Python script"
-- "What's the capital of France?"
-- "Tell me a joke"
-For these, say: "I can only help you with your CV and career goals. Try asking me about improving your CV or preparing for interviews."`;
+## RESPONSE FORMAT:
+- sender: "assistant" for all your responses
+- Keep answers concise and actionable
+- Use bullet points for lists
+- End with one focused follow-up question when needed`;
 }
+// async function sendToGemini({ cv, history, message, ragContext }) {
+//   const genAI = getGenAI();
+//   console.log('Gemini KEY:', process.env.GEMINI_API_KEY?.slice(0, 15));
+//   console.log('genAI instance:', !!genAI);
+//   if (!process.env.GEMINI_API_KEY) {
+//     throw new AppError('GEMINI_API_KEY is not configured', 500);
+//   }
 
-async function sendToGemini({ cv, history, message }) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new AppError('GEMINI_API_KEY is not configured', 500);
+//   const model = genAI.getGenerativeModel({
+//     // model: 'gemini-1.5-flash',
+//     model: 'gemini-1.0-pro'
+//   });
+
+//   const geminiHistory = history.map((msg) => ({
+//     role: msg.sender === 'user' ? 'user' : 'model',
+//     parts: [{ text: msg.message }],
+//   }));
+
+//   const systemPrompt = buildSystemPrompt(cv, ragContext);
+
+//   const chatSession = model.startChat({  
+//     history: [
+//       {
+//         role: 'user',
+//         parts: [{ text: systemPrompt }],
+//       },
+//       {
+//         role: 'model',
+//         parts: [{ text: 'Understood. I will follow these instructions.' }],
+//       },
+//       ...geminiHistory,
+//     ],
+//   });
+
+//   const result = await chatSession.sendMessage(message);
+
+//   return {
+//     text: result.response.text(),
+//     usage: result.response.usageMetadata,
+//   };
+// }
+async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
+  try {
+    const genAI = getGenAI();
+
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash',
+      systemInstruction: buildSystemPrompt(cv, ragContext),
+    });
+
+    const geminiHistory = (history || []).map((msg) => ({
+      role: msg.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.message }],
+    }));
+
+    const chat = model.startChat({ history: geminiHistory });
+    const result = await chat.sendMessage(message);
+
+    return {
+      text: result.response.text(),
+      usage: result.response.usageMetadata,
+    };
+  } catch (err) {
+    const status = err && (err.status || err.statusCode || err.code);
+    if ((status === 429 || status === '429') && retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return sendToGemini({ cv, history, message, ragContext }, retries - 1);
+    }
+    throw err;
   }
-
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
-    systemInstruction: buildSystemPrompt(cv),
-  });
-
-  const geminiHistory = history.map((msg) => ({
-    role: msg.sender === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.message }],
-  }));
-
-  const chat = model.startChat({ history: geminiHistory });
-  const result = await chat.sendMessage(message);
-
-  return {
-    text: result.response.text(),
-    usage: result.response.usageMetadata,
-  };
 }
 
+async function softDeleteSession(sessionId) {
+  const client = ensureSupabase();
+  const { error } = await client
+    .from('chat_sessions')
+    .update({ status: 'deleted' })
+    .eq('id', sessionId);
+
+  if (error) {
+    throwDatabaseError(error, 'Failed to delete chat session');
+  }
+}
 module.exports = {
   createChatSession,
   fetchUserSessions,
   getUserCV,
   getSessionHistory,
+  getRagContextForFeature,
   saveMessage,
   validateSession,
   updateSessionTimestamp,
   fetchMessages,
   buildSystemPrompt,
   sendToGemini,
+  softDeleteSession,
 };

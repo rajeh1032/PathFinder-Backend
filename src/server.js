@@ -13,12 +13,7 @@ const authRoutes = require('./modules/auth/auth.routes');
 const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
 const testRoutes = require('./modules/test/test.routes');
 const chatRouter = require('./modules/chat/chat.routes');
-
-
 const userRoutes = require('./modules/users/users.routes');
-const chatRouter = require('./modules/chat/chat.routes');
-
-
 
 const app = express();
 const PORT = process.env.PORT || 5000;
