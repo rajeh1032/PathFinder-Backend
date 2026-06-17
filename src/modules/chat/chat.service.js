@@ -1,8 +1,7 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const AppError = require('../../common/errors/AppError');
+const { config: geminiConfig } = require('../../config/gemini');
 const { supabase, isConfigured } = require('../../config/supabase');
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const geminiService = require('../ai/gemini.service');
 
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
@@ -246,26 +245,26 @@ For these, say: "I can only help you with your CV and career goals. Try asking m
 }
 
 async function sendToGemini({ cv, history, message }) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new AppError('GEMINI_API_KEY is not configured', 500);
-  }
+  const contents = [
+    ...history.map((msg) => ({
+      role: msg.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.message }],
+    })),
+    {
+      role: 'user',
+      parts: [{ text: message }],
+    },
+  ];
 
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+  const result = await geminiService.generateContent({
+    model: geminiConfig.model,
     systemInstruction: buildSystemPrompt(cv),
+    contents,
   });
 
-  const geminiHistory = history.map((msg) => ({
-    role: msg.sender === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.message }],
-  }));
-
-  const chat = model.startChat({ history: geminiHistory });
-  const result = await chat.sendMessage(message);
-
   return {
-    text: result.response.text(),
-    usage: result.response.usageMetadata,
+    text: result.text,
+    usage: result.usage,
   };
 }
 

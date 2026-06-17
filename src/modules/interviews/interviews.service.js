@@ -593,7 +593,7 @@ const createInterviewSession = async ({ userId, payload }) => {
     }
   }
 
-  const ragContext = await ragService.getRagContextForFeature('interview_rules');
+  const ragContext = await ragService.getRagContextForFeature('interview');
   const generationMaxTokens = Math.max(
     MIN_INTERVIEW_OUTPUT_TOKENS,
     payload.total_questions * 220,
