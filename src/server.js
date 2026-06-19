@@ -14,11 +14,7 @@ const authRoutes = require('./modules/auth/auth.routes');
 const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
 const testRoutes = require('./modules/test/test.routes');
 const chatRouter = require('./modules/chat/chat.routes');
-
-
 const userRoutes = require('./modules/users/users.routes');
-
-
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -38,6 +34,14 @@ app.get('/', (req, res) => {
     supabase: isConfigured ? 'connected' : 'not configured',
   });
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'pathfinder-backend',
+  });
+});
+
 app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/interviews', interviewsRoutes);
