@@ -34,6 +34,14 @@ app.get('/', (req, res) => {
     supabase: isConfigured ? 'connected' : 'not configured',
   });
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'pathfinder-backend',
+  });
+});
+
 app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/interviews', interviewsRoutes);
