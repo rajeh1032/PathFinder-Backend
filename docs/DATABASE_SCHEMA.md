@@ -615,6 +615,9 @@ Questions and answers inside an interview session.
 | `interview_session_id` | `uuid` | FK to `interview_sessions.id` |
 | `question` | `text` | Required |
 | `question_order` | `integer` | Order inside the session |
+| `options` | `jsonb` | MCQ option list |
+| `correct_option_index` | `integer` | Internal answer key, never expose in active responses |
+| `question_format` | `text` | MCQ-only for interviews |
 | `user_answer` | `text` | Nullable |
 | `is_skipped` | `boolean` | Default `false` |
 | `answer_type` | `text` | `text`, `voice` |
@@ -626,6 +629,21 @@ Questions and answers inside an interview session.
 | `generated_by_type` | `generated_by_type` | Usually `ai` |
 
 Unique constraint: `interview_session_id`, `question_order`.
+
+### `interview_question_sets`
+
+Cached/generated MCQ interview question sets used to avoid regenerating the same interview prompt repeatedly.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `career_path_id` | `uuid` | Nullable FK to `career_paths.id` |
+| `interview_type` | `text` | `behavioral`, `technical`, `mock_hr` |
+| `request_text` | `text` | Normalized generation request |
+| `embedding` | `vector(1536)` | Request embedding |
+| `questions` | `jsonb` | Cached MCQ question payload |
+| `metadata` | `jsonb` | Generation metadata |
+| `created_at` | `timestamptz` | Default `now()` |
 
 ### `cover_letters`
 
@@ -886,6 +904,7 @@ Admin and system audit trail.
 | `api_sources` | `api_sync_runs` | One-to-many |
 | `users` | `notification_settings` | One-to-one |
 | `users` | `activity_logs` | One-to-many admin actions |
+| `career_paths` | `interview_question_sets` | One-to-many |
 
 ## Module Ownership Checklist
 
@@ -906,7 +925,7 @@ Use this checklist before creating any module. A module is correct only if it to
 | `appliedJobs` | `applied_jobs` | `jobs` |
 | `jobMatches` | `job_matches` | `jobs`, `cvs`, `cv_analyses`, `skills`, `user_skills` |
 | `roadmaps` | `roadmaps`, `roadmap_steps` | `career_paths`, `skills`, `courses` |
-| `interviews` | `interview_sessions`, `interview_questions` | `jobs`, `career_paths`, `ai_logs` |
+| `interviews` | `interview_sessions`, `interview_questions`, `interview_question_sets` | `jobs`, `career_paths`, `ai_logs` |
 | `coverLetters` | `cover_letters`, `cover_letter_insights`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
 | `chat` | `chat_sessions`, `chat_messages` | `rag_documents`, `rag_chunks`, `ai_logs` |
 | `notifications` | `notification_settings` | `users` |

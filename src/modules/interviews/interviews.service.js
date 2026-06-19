@@ -1,50 +1,18 @@
 const AppError = require('../../common/errors/AppError');
-const geminiService = require('../ai/gemini.service');
+const logger = require('../../common/utils/logger');
+const aiService = require('../ai/ai.service');
+const {
+  INTERVIEW_SESSION_EVALUATION_GEMINI_SCHEMA,
+  INTERVIEW_QUESTIONS_GEMINI_SCHEMA,
+  buildInterviewEvaluationMessages,
+  buildInterviewGenerationMessages,
+} = require('../ai/prompts/interview.prompt');
 const ragService = require('../rag/rag.service');
+const { paginateData } = require('../../common/utils/pagination');
 const interviewsRepository = require('./interviews.repository');
 
 const CACHE_SIMILARITY_THRESHOLD = 0.9;
 const MIN_INTERVIEW_OUTPUT_TOKENS = 4096;
-const INTERVIEW_QUESTIONS_GEMINI_SCHEMA = {
-  type: 'object',
-  properties: {
-    questions: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          question_order: { type: 'integer' },
-          question: { type: 'string' },
-          type: { type: 'string' },
-          skill: { type: 'string' },
-          options: {
-            type: 'array',
-            items: { type: 'string' },
-          },
-          correct_option_index: { type: 'integer' },
-        },
-        required: [
-          'question_order',
-          'question',
-          'type',
-          'skill',
-          'options',
-          'correct_option_index',
-        ],
-        propertyOrdering: [
-          'question_order',
-          'question',
-          'type',
-          'skill',
-          'options',
-          'correct_option_index',
-        ],
-      },
-    },
-  },
-  required: ['questions'],
-  propertyOrdering: ['questions'],
-};
 
 const normalizeText = (value) =>
   String(value || '')
@@ -304,6 +272,47 @@ const buildFallbackQuestions = ({
   return questions;
 };
 
+const makeFallbackGenerationEnvelope = ({
+  totalQuestions,
+  careerPath,
+  interviewType,
+  skills,
+  latencyMs = 0,
+  reason = null,
+}) => {
+  const fallbackQuestions = buildFallbackQuestions({
+    totalQuestions,
+    careerPath,
+    interviewType,
+    skills,
+  });
+
+  return {
+    generated: {
+      data: {
+        questions: fallbackQuestions,
+      },
+      model: 'local-fallback',
+      raw: null,
+      usage: null,
+      latency_ms: latencyMs,
+      fallback: true,
+      fallback_reason: reason,
+    },
+    latencyMs,
+    normalizedQuestions: normalizeGeneratedQuestions({
+      questions: fallbackQuestions,
+      totalQuestions,
+      fallbackContext: {
+        careerPath,
+        interviewType,
+        skills,
+      },
+    }),
+    fallbackUsed: true,
+  };
+};
+
 const normalizeGeneratedQuestions = ({ questions, totalQuestions, fallbackContext }) => {
   const normalized = [];
   const seen = new Set();
@@ -468,6 +477,525 @@ const buildInterviewContext = async ({ userId, careerPathId }) => {
   };
 };
 
+const getAuthenticatedUserId = (user) => {
+  const userId = user?.userId || user?.id || null;
+
+  if (!userId) {
+    throw new AppError('Authentication required', 401);
+  }
+
+  return userId;
+};
+
+const getInterviewSessionByUser = async ({ userId, sessionId }) => {
+  const session = await interviewsRepository.findInterviewSessionById(sessionId, userId);
+
+  if (!session) {
+    throw new AppError('Interview session not found', 404);
+  }
+
+  return session;
+};
+
+const getQuestionsForSession = async (sessionId) => {
+  const questions = await interviewsRepository.listQuestionsBySessionIds([sessionId]);
+
+  return sortQuestionsByOrder(questions.filter(Boolean));
+};
+
+const stripCorrectOptionIndex = (question) => {
+  if (!question) {
+    return null;
+  }
+
+  const { correct_option_index, ...publicQuestion } = question;
+  return publicQuestion;
+};
+
+const formatQuestionForResponse = (question) => ({
+  id: question.id,
+  question_order: question.question_order,
+  question: question.question,
+  options: question.options || [],
+  question_format: question.question_format || 'mcq',
+  user_answer: question.user_answer ?? null,
+  is_skipped: Boolean(question.is_skipped),
+  answer_type: question.answer_type ?? null,
+  answered_at: question.answered_at ?? null,
+  feedback: question.feedback ?? null,
+  score: question.score ?? null,
+  question_status: question.question_status ?? null,
+  ai_suggestion: question.ai_suggestion ?? null,
+  generated_by_type: question.generated_by_type || 'ai',
+});
+
+const formatActiveQuestionForResponse = (question) => ({
+  id: question.id,
+  question_order: question.question_order,
+  question: question.question,
+  options: question.options || [],
+  user_answer: question.user_answer ?? null,
+  answer_type: 'mcq',
+  is_skipped: Boolean(question.is_skipped),
+  answered_at: question.answered_at ?? null,
+  feedback: question.feedback ?? null,
+  score: question.score ?? null,
+  question_status: question.question_status ?? null,
+  ai_suggestion: question.ai_suggestion ?? null,
+});
+
+const formatPublicQuestion = (question) => ({
+  ...formatQuestionForResponse(stripCorrectOptionIndex(question)),
+});
+
+const normalizeSingleRelation = (value) =>
+  Array.isArray(value) ? value[0] || null : value || null;
+
+const getQuestionSelectedOptionIndex = (question, selectedOption = null) => {
+  if (!question?.options || !Array.isArray(question.options) || !selectedOption) {
+    return null;
+  }
+
+  const index = question.options.findIndex(
+    (option) => normalizeText(option).toLowerCase() === normalizeText(selectedOption).toLowerCase(),
+  );
+
+  return index >= 0 ? index : null;
+};
+
+const buildQuestionEvaluationContext = (question) => {
+  const selectedOptionIndex = getQuestionSelectedOptionIndex(question, question.user_answer);
+  const correctOptionIndex =
+    Number.isInteger(Number(question.correct_option_index)) && Array.isArray(question.options)
+      ? Number(question.correct_option_index)
+      : null;
+
+  return {
+    question_id: question.id,
+    question_order: question.question_order,
+    question: question.question,
+    options: question.options || [],
+    selected_option_index: selectedOptionIndex,
+    selected_option_text:
+      selectedOptionIndex === null ? null : question.options?.[selectedOptionIndex] || null,
+    correct_option_index: correctOptionIndex,
+    correct_option_text:
+      correctOptionIndex === null ? null : question.options?.[correctOptionIndex] || null,
+    user_answer: question.user_answer ?? null,
+    is_skipped: Boolean(question.is_skipped),
+  };
+};
+
+const buildQuestionStatusCounts = (questions = []) =>
+  questions.reduce(
+    (acc, question) => {
+      if (question.question_status === 'passed') {
+        acc.passed += 1;
+      } else if (question.question_status === 'needs_improvement') {
+        acc.needs_improvement += 1;
+      } else if (question.question_status === 'skipped') {
+        acc.skipped += 1;
+      } else if (question.is_skipped || question.answered_at || question.user_answer !== null) {
+        acc.pending_evaluation += 1;
+      } else {
+        acc.unanswered += 1;
+      }
+
+      return acc;
+    },
+    {
+      passed: 0,
+      needs_improvement: 0,
+      skipped: 0,
+      pending_evaluation: 0,
+      unanswered: 0,
+    },
+  );
+
+const buildQuestionProgressPayload = (session, questions = []) => {
+  const counts = buildQuestionStatusCounts(questions);
+  const totalQuestions = Number(session?.total_questions) || questions.length || 0;
+  const completedQuestions =
+    counts.passed + counts.needs_improvement + counts.skipped + counts.pending_evaluation;
+  const answeredQuestions = counts.passed + counts.needs_improvement + counts.pending_evaluation;
+
+  return {
+    session_id: session?.id || null,
+    status: session?.status || null,
+    total_questions: totalQuestions,
+    answered_count: answeredQuestions,
+    skipped_count: counts.skipped,
+    progress: totalQuestions ? Math.round((completedQuestions / totalQuestions) * 100) : 0,
+    questions: questions.map(formatActiveQuestionForResponse),
+  };
+};
+
+const getQuestionSelectedOption = (question, selectedOptionIndex) => {
+  if (!question?.options || !Array.isArray(question.options)) {
+    return null;
+  }
+
+  const index = Number(selectedOptionIndex);
+
+  if (!Number.isInteger(index) || index < 0 || index >= question.options.length) {
+    return null;
+  }
+
+  return question.options[index] || null;
+};
+
+const calculateSessionDuration = (session) => {
+  if (!session?.started_at || !session?.completed_at) {
+    return {
+      duration_seconds: null,
+      duration_minutes: null,
+      duration_label: null,
+    };
+  }
+
+  const startedAt = new Date(session.started_at).getTime();
+  const completedAt = new Date(session.completed_at).getTime();
+  if (!Number.isFinite(startedAt) || !Number.isFinite(completedAt) || completedAt < startedAt) {
+    return {
+      duration_seconds: null,
+      duration_minutes: null,
+      duration_label: null,
+    };
+  }
+
+  const durationSeconds = Math.max(0, Math.round((completedAt - startedAt) / 1000));
+  const durationMinutes = Math.max(0, Math.round(durationSeconds / 60));
+
+  return {
+    duration_seconds: durationSeconds,
+    duration_minutes: durationMinutes,
+    duration_label: durationMinutes ? `${durationMinutes} min` : `${durationSeconds} sec`,
+  };
+};
+
+const buildScoreComparison = (currentScore, previousSession = null) => {
+  const current = Number(currentScore);
+  const previous = Number(previousSession?.overall_score);
+
+  if (!Number.isFinite(previous) || previous < 0) {
+    return {
+      current_score: Number.isFinite(current) ? current : 0,
+      previous_score: null,
+      previous_session_id: null,
+      previous_completed_at: null,
+      score_change: null,
+      improvement_percentage: null,
+      trend: 'no_previous_data',
+    };
+  }
+
+  const safeCurrent = Number.isFinite(current) ? current : 0;
+  const scoreChange = safeCurrent - previous;
+  const improvementPercentage = previous > 0 ? Math.round((scoreChange / previous) * 100) : null;
+
+  return {
+    current_score: safeCurrent,
+    previous_score: previous,
+    previous_session_id: previousSession?.id || null,
+    previous_completed_at: previousSession?.completed_at || null,
+    score_change: scoreChange,
+    improvement_percentage: improvementPercentage,
+    trend: scoreChange > 0 ? 'improved' : scoreChange < 0 ? 'declined' : 'unchanged',
+  };
+};
+
+const normalizeSkillsBreakdown = (skillsBreakdown = []) =>
+  (Array.isArray(skillsBreakdown) ? skillsBreakdown : [])
+    .map((item) => ({
+      skill_name: String(item?.skill_name || item?.skill || '').trim(),
+      score: Math.max(0, Math.min(100, Number(item?.score) || 0)),
+      feedback: String(item?.feedback || '').trim(),
+      status: String(item?.status || 'needs_improvement').trim(),
+    }))
+    .filter((item) => item.skill_name);
+
+const buildFallbackSkillsBreakdown = (interviewType = null) => {
+  const byType = {
+    technical: [
+      'Technical Depth',
+      'Problem Solving',
+      'Communication',
+      'System Design',
+    ],
+    behavioral: [
+      'Communication',
+      'Teamwork',
+      'Adaptability',
+      'Ownership',
+    ],
+    mock_hr: [
+      'Self Presentation',
+      'Communication',
+      'Confidence',
+      'Professionalism',
+    ],
+  };
+
+  return (byType[interviewType] || byType.technical).map((skillName) => ({
+    skill_name: skillName,
+    score: 0,
+    feedback: 'Limited evidence available for a detailed skill assessment.',
+    status: 'insufficient_evidence',
+  }));
+};
+
+const buildInterviewSessionResponse = (session) => ({
+  id: session.id,
+  user_id: session.user_id,
+  career_path_id: session.career_path_id,
+  career_path: normalizeSingleRelation(session.career_path)
+    ? {
+        id: normalizeSingleRelation(session.career_path).id || session.career_path_id || null,
+        title: normalizeSingleRelation(session.career_path).title || null,
+        category: normalizeSingleRelation(session.career_path).category || null,
+        difficulty_level: normalizeSingleRelation(session.career_path).difficulty_level || null,
+      }
+    : null,
+  job_id: session.job_id ?? null,
+  status: session.status,
+  interview_type: session.interview_type,
+  total_questions: session.total_questions,
+  started_at: session.started_at,
+  completed_at: session.completed_at,
+  overall_score: session.overall_score ?? null,
+  quick_ai_insight: session.quick_ai_insight ?? null,
+});
+
+const buildInterviewHistoryItem = (session) => ({
+  id: session.id,
+  career_path_title: session.career_path?.title || null,
+  interview_type: session.interview_type,
+  status: session.status,
+  total_questions: session.total_questions,
+  overall_score: session.overall_score ?? null,
+  quick_ai_insight: session.quick_ai_insight ?? null,
+  started_at: session.started_at,
+  completed_at: session.completed_at,
+});
+
+const buildInterviewHistorySummary = (sessions = []) => {
+  const completedSessions = sessions.filter(
+    (session) => session.status === 'completed' && Number.isFinite(Number(session.overall_score)),
+  );
+  const totalInterviews = sessions.length;
+  const averageScore = completedSessions.length
+    ? Math.round(
+        completedSessions.reduce((sum, session) => sum + Number(session.overall_score || 0), 0) /
+          completedSessions.length,
+      )
+    : null;
+  const bestScore = completedSessions.length
+    ? Math.max(...completedSessions.map((session) => Number(session.overall_score || 0)))
+    : null;
+  const latestCompletedSession = [...completedSessions].sort(
+    (left, right) => new Date(right.completed_at || 0).getTime() - new Date(left.completed_at || 0).getTime(),
+  )[0] || null;
+
+  return {
+    total_interviews: totalInterviews,
+    average_score: averageScore,
+    best_score: bestScore,
+    latest_score: latestCompletedSession?.overall_score ?? null,
+    latest_completed_at: latestCompletedSession?.completed_at || null,
+  };
+};
+
+const buildAdminInterviewHistoryItem = (session) => ({
+  id: session.id,
+  user_name: session.user?.name || null,
+  career_path_title: session.career_path?.title || null,
+  interview_type: session.interview_type,
+  status: session.status,
+  total_questions: session.total_questions,
+  overall_score: session.overall_score ?? null,
+  quick_ai_insight: session.quick_ai_insight ?? null,
+  started_at: session.started_at,
+  completed_at: session.completed_at,
+});
+
+const buildAdminInterviewSearchHaystack = (session) =>
+  [
+    session.id,
+    session.user_id,
+    session.user?.name,
+    session.user?.email,
+    session.career_path_id,
+    session.career_path?.title,
+    session.career_path?.category,
+    session.career_path?.difficulty_level,
+    session.job_id,
+    session.status,
+    session.interview_type,
+    session.total_questions,
+    session.overall_score,
+    session.quick_ai_insight,
+    session.started_at,
+    session.completed_at,
+    session.created_at,
+    session.updated_at,
+    JSON.stringify(session.score_breakdown || {}),
+    JSON.stringify(session.feedback_text || {}),
+    session.recording_url,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== '')
+    .map((value) => normalizeText(value).toLowerCase())
+    .join(' | ');
+
+const buildAdminInterviewQuestion = (question) => ({
+  id: question.id,
+  question_order: question.question_order,
+  question: question.question,
+  options: question.options || [],
+  user_answer: question.user_answer ?? null,
+  is_skipped: Boolean(question.is_skipped),
+  answered_at: question.answered_at ?? null,
+  feedback: question.feedback ?? null,
+  score: question.score ?? null,
+  question_status: question.question_status ?? null,
+  ai_suggestion: question.ai_suggestion ?? null,
+});
+
+const buildAdminInterviewSessionResponse = (session, questions = []) => ({
+  id: session.id,
+  user_id: session.user_id,
+  user_name: session.user?.name || null,
+  user_email: session.user?.email || null,
+  career_path_id: session.career_path_id,
+  career_path_title: session.career_path?.title || null,
+  career_path_category: session.career_path?.category || null,
+  job_id: session.job_id ?? null,
+  status: session.status,
+  interview_type: session.interview_type,
+  total_questions: session.total_questions,
+  started_at: session.started_at,
+  completed_at: session.completed_at,
+  overall_score: session.overall_score ?? null,
+  quick_ai_insight: session.quick_ai_insight ?? null,
+  questions: questions.map(buildAdminInterviewQuestion),
+});
+
+const buildInterviewResultPayload = (session, questions = [], previousSession = null) => {
+  const questionBreakdown = questions.map((question) => {
+    const evaluation = buildQuestionEvaluationContext(question);
+
+    return {
+      id: question.id,
+      question_order: question.question_order,
+      question: question.question,
+      options: question.options || [],
+      selected_option_index: evaluation.selected_option_index,
+      correct_option_index: question.correct_option_index ?? null,
+      is_correct: question.question_status === 'passed',
+      score: question.score ?? 0,
+      question_status: question.question_status || 'unanswered',
+      feedback: question.feedback || null,
+      ai_suggestion: question.ai_suggestion || null,
+    };
+  });
+
+  const duration = calculateSessionDuration(session);
+  const sessionSkillsBreakdown = normalizeSkillsBreakdown(
+    session.feedback_text?.skills_breakdown || [],
+  );
+  const comparison = buildScoreComparison(session.overall_score ?? 0, previousSession);
+
+  return {
+    session: {
+      id: session.id,
+      career_path_id: session.career_path_id,
+      career_path: normalizeSingleRelation(session.career_path)
+        ? {
+            id: normalizeSingleRelation(session.career_path).id || session.career_path_id || null,
+            title: normalizeSingleRelation(session.career_path).title || null,
+            category: normalizeSingleRelation(session.career_path).category || null,
+            difficulty_level: normalizeSingleRelation(session.career_path).difficulty_level || null,
+          }
+        : null,
+      job_id: session.job_id,
+      interview_type: session.interview_type,
+      status: session.status,
+      total_questions: session.total_questions,
+      overall_score: session.overall_score ?? null,
+      quick_ai_insight: session.quick_ai_insight || null,
+      started_at: session.started_at || null,
+      completed_at: session.completed_at || null,
+      ...duration,
+      score_breakdown: session.score_breakdown || null,
+      feedback_text: session.feedback_text || null,
+    },
+    comparison,
+    skills_breakdown: sessionSkillsBreakdown,
+    question_breakdown: questionBreakdown,
+    summary: {
+      answered_questions: session.score_breakdown
+        ? (session.score_breakdown.correct_answers || 0) +
+          (session.score_breakdown.wrong_answers || 0)
+        : Array.isArray(questionBreakdown)
+          ? questionBreakdown.filter(
+              (question) =>
+                question.question_status === 'passed' ||
+                question.question_status === 'needs_improvement',
+            ).length
+          : 0,
+      skipped_questions: session.score_breakdown?.skipped_answers ?? (
+        Array.isArray(questionBreakdown)
+          ? questionBreakdown.filter(
+              (question) => question.question_status === 'skipped',
+            ).length
+          : 0
+      ),
+      average_question_score: session.overall_score ?? 0,
+    },
+  };
+};
+
+const evaluateInterviewSession = async ({
+  userId,
+  session,
+  questions,
+  questionsForPrompt,
+  previousScore = null,
+}) => {
+  let ragContext = '';
+  try {
+    ragContext = await ragService.getRagContextForFeature('interview');
+  } catch (error) {
+    logger.warn('Interview RAG context fetch failed during evaluation', {
+      reason: error.message,
+    });
+  }
+  const messages = buildInterviewEvaluationMessages({
+    session: {
+      ...session,
+      total_questions: questionsForPrompt.length,
+    },
+    careerPath: normalizeSingleRelation(session.career_path),
+    previousScore,
+    questions: questionsForPrompt,
+    ragContext,
+  });
+
+  const result = await aiService.generateJsonCompletion({
+    userId,
+    feature: 'interview_feedback',
+    messages,
+    responseSchemaHint: 'INTERVIEW_SESSION_EVALUATION_GEMINI_SCHEMA',
+    responseJsonSchema: INTERVIEW_SESSION_EVALUATION_GEMINI_SCHEMA,
+    maxTokens: Math.max(2048, questionsForPrompt.length * 300),
+  });
+
+  if (!result?.data?.question_breakdown || !Array.isArray(result.data.question_breakdown)) {
+    throw new AppError('Interview evaluation response is invalid', 502);
+  }
+
+  return result.data;
+};
+
 const listCareerPaths = async () => {
   const careerPaths = await interviewsRepository.listActiveCareerPaths();
 
@@ -500,11 +1028,22 @@ const createInterviewSession = async ({ userId, payload }) => {
 
   const previousHistory = await getUserQuestionHistory(userId);
 
-  const embeddingResult = await geminiService.embedText({
-    input: requestText,
-  });
-  const embedding = embeddingResult.embeddings?.[0] || [];
-  const embeddingModel = embeddingResult.model;
+  let embedding = [];
+  let embeddingModel = 'local-fallback';
+  let embeddingFailed = false;
+
+  try {
+    const embeddingResult = await aiService.embedText({
+      input: requestText,
+    });
+    embedding = embeddingResult.embeddings?.[0] || [];
+    embeddingModel = embeddingResult.model;
+  } catch (error) {
+    embeddingFailed = true;
+    logger.warn('Interview embedding generation failed, falling back to local generation', {
+      reason: error.message,
+    });
+  }
 
   const cachedSets = await interviewsRepository.listQuestionSetCacheCandidates({
     interviewType: payload.interview_type,
@@ -566,7 +1105,7 @@ const createInterviewSession = async ({ userId, payload }) => {
         correct_option_index: question.correct_option_index,
         question_format: 'mcq',
         is_skipped: false,
-        answer_type: 'text',
+        answer_type: null,
         question_status: null,
         generated_by_type: 'ai',
       }));
@@ -579,6 +1118,10 @@ const createInterviewSession = async ({ userId, payload }) => {
 
       return {
         session_id: insertedSession.id,
+        status: insertedSession.status,
+        career_path_id: insertedSession.career_path_id,
+        interview_type: insertedSession.interview_type,
+        total_questions: insertedSession.total_questions,
         questions: orderedQuestions.map((question) => ({
           id: question.id,
           question_order: question.question_order,
@@ -593,57 +1136,72 @@ const createInterviewSession = async ({ userId, payload }) => {
     }
   }
 
-  const ragContext = await ragService.getRagContextForFeature('interview');
+  let ragContext = '';
+  try {
+    ragContext = await ragService.getRagContextForFeature('interview');
+  } catch (error) {
+    logger.warn('Interview RAG context fetch failed, proceeding without it', {
+      reason: error.message,
+    });
+  }
   const generationMaxTokens = Math.max(
     MIN_INTERVIEW_OUTPUT_TOKENS,
     payload.total_questions * 220,
   );
 
   const attemptGeneration = async ({ excludedQuestions = [] }) => {
-    const systemPrompt = buildSystemPrompt(ragContext);
-    const userPrompt = buildUserPromptWithExclusions({
+    const messages = buildInterviewGenerationMessages({
       requestText,
       totalQuestions: payload.total_questions,
       interviewType: payload.interview_type,
+      ragContext,
       excludedQuestions,
     });
 
     const startedAt = Date.now();
-    const generated = await geminiService.generateJsonCompletion({
-      userId,
-      feature: 'interview_session_generation',
-      messages: [
-        {
-          role: 'system',
-          content: systemPrompt,
-        },
-        {
-          role: 'user',
-          content: userPrompt,
-        },
-      ],
-      responseSchemaHint: 'INTERVIEW_QUESTIONS_GEMINI_SCHEMA',
-      responseJsonSchema: INTERVIEW_QUESTIONS_GEMINI_SCHEMA,
-      maxTokens: generationMaxTokens,
-    });
-    const latencyMs = Date.now() - startedAt;
 
-    const normalizedQuestions = normalizeGeneratedQuestions({
-      questions: generated.data?.questions,
-      totalQuestions: payload.total_questions,
-      fallbackContext: {
+    try {
+      const generated = await aiService.generateJsonCompletion({
+        userId,
+        feature: 'interview_session_generation',
+        messages,
+        responseSchemaHint: 'INTERVIEW_QUESTIONS_GEMINI_SCHEMA',
+        responseJsonSchema: INTERVIEW_QUESTIONS_GEMINI_SCHEMA,
+        maxTokens: generationMaxTokens,
+      });
+      const latencyMs = Date.now() - startedAt;
+
+      const normalizedQuestions = normalizeGeneratedQuestions({
+        questions: generated.data?.questions,
+        totalQuestions: payload.total_questions,
+        fallbackContext: {
+          careerPath: context.careerPath,
+          interviewType: payload.interview_type,
+          skills: context.skills,
+        },
+      });
+
+      return {
+        generated,
+        latencyMs,
+        normalizedQuestions,
+        fallbackUsed: false,
+      };
+    } catch (error) {
+      logger.warn('Interview AI generation failed, falling back to local questions', {
+        reason: error.message,
+      });
+
+      const latencyMs = Date.now() - startedAt;
+      return makeFallbackGenerationEnvelope({
+        totalQuestions: payload.total_questions,
         careerPath: context.careerPath,
         interviewType: payload.interview_type,
         skills: context.skills,
-      },
-    });
-
-    return {
-      generated,
-      latencyMs,
-      normalizedQuestions,
-      userPrompt,
-    };
+        latencyMs,
+        reason: error.message,
+      });
+    }
   };
 
   let generationResult = await attemptGeneration({
@@ -690,7 +1248,7 @@ const createInterviewSession = async ({ userId, payload }) => {
     correct_option_index: question.correct_option_index,
     question_format: 'mcq',
     is_skipped: false,
-    answer_type: 'text',
+    answer_type: null,
     question_status: null,
     generated_by_type: 'ai',
   }));
@@ -711,16 +1269,27 @@ const createInterviewSession = async ({ userId, payload }) => {
       career_path_id: payload.career_path_id,
       interview_type: payload.interview_type,
       skills: context.skills.map((skill) => skill.name),
-      source: 'gemini',
+      source: generationResult.fallbackUsed ? 'local_fallback' : 'gemini',
+      embedding_fallback: embeddingFailed,
       request_signature: computeSignature(normalizedQuestions),
       embedding_model: embeddingModel,
     },
   };
 
-  await interviewsRepository.createQuestionSetCache(cachePayload);
+  try {
+    await interviewsRepository.createQuestionSetCache(cachePayload);
+  } catch (error) {
+    logger.warn('Interview question cache store failed', {
+      reason: error.message,
+    });
+  }
 
   return {
     session_id: session.id,
+    status: session.status,
+    career_path_id: session.career_path_id,
+    interview_type: session.interview_type,
+    total_questions: session.total_questions,
     questions: orderedQuestions.map((question) => ({
       id: question.id,
       question_order: question.question_order,
@@ -734,8 +1303,451 @@ const createInterviewSession = async ({ userId, payload }) => {
   };
 };
 
+const listInterviewSessions = async ({ user, query = {} }) => {
+  const userId = getAuthenticatedUserId(user);
+  const sessions = await interviewsRepository.listInterviewSessionHistory(userId);
+  const searchText = normalizeText(query.q).toLowerCase();
+  const normalizedStatus = normalizeText(query.status);
+  const normalizedInterviewType = normalizeText(query.interview_type);
+  const normalizedCareerPathId = normalizeText(query.career_path_id);
+
+  const filteredSessions = sessions.filter((session) => {
+    const matchesSearch =
+      !searchText ||
+      [
+        session.id,
+        session.interview_type,
+        session.status,
+        session.career_path?.title,
+        session.career_path?.category,
+        session.quick_ai_insight,
+      ]
+        .filter(Boolean)
+        .some((field) => normalizeText(field).toLowerCase().includes(searchText));
+
+    const matchesStatus =
+      !normalizedStatus || normalizeText(session.status) === normalizedStatus;
+    const matchesInterviewType =
+      !normalizedInterviewType ||
+      normalizeText(session.interview_type) === normalizedInterviewType;
+    const matchesCareerPath =
+      !normalizedCareerPathId ||
+      normalizeText(session.career_path_id) === normalizedCareerPathId;
+
+    return matchesSearch && matchesStatus && matchesInterviewType && matchesCareerPath;
+  });
+
+  const sortedSessions = [...filteredSessions].sort((left, right) => {
+    const rightDate = new Date(right.created_at || 0).getTime();
+    const leftDate = new Date(left.created_at || 0).getTime();
+    return rightDate - leftDate;
+  });
+
+  const { data, pagination } = paginateData(sortedSessions, query, sortedSessions.length);
+
+  return {
+    data: data.map(buildInterviewHistoryItem),
+    pagination,
+    summary: buildInterviewHistorySummary(filteredSessions),
+  };
+};
+
+const listAdminInterviewSessions = async ({ query = {} }) => {
+  const sessions = await interviewsRepository.listAllInterviewSessionHistory();
+  const rawSearchTerms = [query.q, query.user_name]
+    .map((value) => normalizeText(value).toLowerCase())
+    .filter(Boolean);
+  const numericSearchTerm =
+    rawSearchTerms.length === 1 && /^-?\d+(\.\d+)?$/.test(rawSearchTerms[0])
+      ? Number(rawSearchTerms[0])
+      : null;
+  const normalizedStatus = normalizeText(query.status);
+  const normalizedInterviewType = normalizeText(query.interview_type);
+  const normalizedCareerPathId = normalizeText(query.career_path_id);
+
+  const filteredSessions = sessions.filter((session) => {
+    const haystack = buildAdminInterviewSearchHaystack(session);
+    const matchesNumericScore =
+      numericSearchTerm !== null
+        ? Number(session.overall_score) === numericSearchTerm
+        : false;
+    const matchesSearch =
+      !rawSearchTerms.length ||
+      (numericSearchTerm !== null
+        ? matchesNumericScore
+        : rawSearchTerms.some((term) => haystack.includes(term)));
+
+    const matchesStatus =
+      !normalizedStatus || normalizeText(session.status) === normalizedStatus;
+    const matchesInterviewType =
+      !normalizedInterviewType ||
+      normalizeText(session.interview_type) === normalizedInterviewType;
+    const matchesCareerPath =
+      !normalizedCareerPathId ||
+      normalizeText(session.career_path_id) === normalizedCareerPathId;
+
+    return matchesSearch && matchesStatus && matchesInterviewType && matchesCareerPath;
+  });
+
+  const sortedSessions = [...filteredSessions].sort((left, right) => {
+    const rightDate = new Date(right.created_at || 0).getTime();
+    const leftDate = new Date(left.created_at || 0).getTime();
+    return rightDate - leftDate;
+  });
+
+  const { data, pagination } = paginateData(sortedSessions, query, sortedSessions.length);
+
+  return {
+    data: data.map(buildAdminInterviewHistoryItem),
+    pagination,
+    summary: buildInterviewHistorySummary(filteredSessions),
+  };
+};
+
+const getInterviewSession = async ({ user, sessionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+
+  return buildInterviewSessionResponse(session);
+};
+
+const getAdminInterviewSession = async ({ sessionId }) => {
+  const session = await interviewsRepository.findAdminInterviewSessionById(sessionId);
+
+  if (!session) {
+    throw new AppError('Interview session not found', 404);
+  }
+
+  const questions = await getQuestionsForSession(session.id);
+  return buildAdminInterviewSessionResponse(session, questions);
+};
+
+const getInterviewSessionQuestions = async ({ user, sessionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+  const questions = await getQuestionsForSession(session.id);
+
+  return buildQuestionProgressPayload(session, questions);
+};
+
+const updateInterviewSession = async ({ user, sessionId, payload = {} }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+  const nextStatus = payload.status || null;
+
+  if (!nextStatus && !payload.submit_partial) {
+    return buildInterviewSessionResponse(session);
+  }
+
+  if (session.status === 'completed') {
+    throw new AppError('Completed interview sessions cannot be updated', 400);
+  }
+
+  if (session.status === 'cancelled' && nextStatus !== 'cancelled') {
+    throw new AppError('Cancelled interview sessions cannot be updated', 400);
+  }
+
+  if (nextStatus === 'completed' || payload.submit_partial) {
+    return finishInterviewSession({ user, sessionId });
+  }
+
+  if (nextStatus === 'cancelled') {
+    return cancelInterviewSession({ user, sessionId });
+  }
+
+  if (nextStatus && !['started', 'in_progress'].includes(nextStatus)) {
+    throw new AppError('Invalid session status', 400);
+  }
+
+  const updatedSession = await interviewsRepository.updateInterviewSession(session.id, {
+    status: nextStatus || session.status,
+  });
+
+  return buildInterviewSessionResponse(updatedSession);
+};
+
+const deleteAdminInterviewSession = async ({ sessionId }) => {
+  const session = await interviewsRepository.findAdminInterviewSessionById(sessionId);
+
+  if (!session) {
+    throw new AppError('Interview session not found', 404);
+  }
+
+  await interviewsRepository.deleteInterviewSession(sessionId);
+
+  return {
+    session_id: sessionId,
+    deleted: true,
+  };
+};
+
+const answerInterviewQuestion = async ({ user, sessionId, questionId, payload }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+
+  if (session.status === 'cancelled') {
+    throw new AppError('Cancelled interview sessions cannot be updated', 400);
+  }
+
+  if (session.status === 'completed') {
+    throw new AppError('Completed interview sessions cannot be updated', 400);
+  }
+
+  const question = await interviewsRepository.findInterviewQuestionById({
+    sessionId,
+    questionId,
+  });
+
+  if (!question) {
+    throw new AppError('Interview question not found', 404);
+  }
+
+  const selectedOption = getQuestionSelectedOption(question, payload.selected_option_index);
+
+  if (!selectedOption) {
+    throw new AppError('Selected option is invalid', 400);
+  }
+
+  const updatedQuestion = await interviewsRepository.updateInterviewQuestion(question.id, {
+    user_answer: selectedOption,
+    is_skipped: false,
+    answered_at: new Date().toISOString(),
+    feedback: null,
+    score: null,
+    question_status: null,
+    ai_suggestion: null,
+  });
+
+  const nextSessionStatus = session.status === 'started' ? 'in_progress' : session.status;
+  const updatedSession = await interviewsRepository.updateInterviewSession(session.id, {
+    status: nextSessionStatus,
+  });
+
+  return {
+    session_id: updatedSession.id,
+    question_id: updatedQuestion.id,
+    selected_option_index: payload.selected_option_index,
+    user_answer: selectedOption,
+    answered_at: updatedQuestion.answered_at,
+    session_status: updatedSession.status,
+  };
+};
+
+const skipInterviewQuestion = async ({ user, sessionId, questionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+
+  if (session.status === 'cancelled') {
+    throw new AppError('Cancelled interview sessions cannot be updated', 400);
+  }
+
+  if (session.status === 'completed') {
+    throw new AppError('Completed interview sessions cannot be updated', 400);
+  }
+
+  const question = await interviewsRepository.findInterviewQuestionById({
+    sessionId,
+    questionId,
+  });
+
+  if (!question) {
+    throw new AppError('Interview question not found', 404);
+  }
+
+  const updatedQuestion = await interviewsRepository.updateInterviewQuestion(question.id, {
+    user_answer: null,
+    is_skipped: true,
+    answered_at: new Date().toISOString(),
+    feedback: null,
+    score: null,
+    question_status: null,
+    ai_suggestion: null,
+  });
+
+  const nextSessionStatus = session.status === 'started' ? 'in_progress' : session.status;
+  const updatedSession = await interviewsRepository.updateInterviewSession(session.id, {
+    status: nextSessionStatus,
+  });
+
+  return {
+    session_id: updatedSession.id,
+    question_id: updatedQuestion.id,
+    is_skipped: true,
+    answered_at: updatedQuestion.answered_at,
+    session_status: updatedSession.status,
+  };
+};
+
+const finishInterviewSession = async ({ user, sessionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+  const questions = await getQuestionsForSession(session.id);
+  const questionsForPrompt = questions.map(buildQuestionEvaluationContext);
+  const previousSession = await interviewsRepository.findPreviousCompletedInterviewSession({
+    userId,
+    careerPathId: session.career_path_id,
+    interviewType: session.interview_type,
+    beforeCompletedAt: session.completed_at || new Date().toISOString(),
+    excludeSessionId: session.id,
+  });
+
+  if (session.status === 'cancelled') {
+    throw new AppError('Cancelled interview sessions cannot be completed', 400);
+  }
+
+  if (session.status === 'completed' && session.score_breakdown && session.feedback_text) {
+    return buildInterviewResultPayload(session, questions, previousSession);
+  }
+
+  const evaluation = await evaluateInterviewSession({
+    userId,
+    session,
+    questions,
+    questionsForPrompt,
+    previousScore: previousSession?.overall_score ?? null,
+  });
+
+  const normalizedBreakdown = Array.isArray(evaluation.question_breakdown)
+    ? evaluation.question_breakdown.map((item) => ({
+        question_id: item.question_id,
+        question_order: item.question_order,
+        selected_option_index:
+          item.selected_option_index === undefined ? null : item.selected_option_index,
+        is_correct: Boolean(item.is_correct),
+        score: Number(item.score) || 0,
+        question_status: item.question_status || 'needs_improvement',
+        feedback: String(item.feedback || '').trim(),
+        ai_suggestion: String(item.ai_suggestion || '').trim(),
+      }))
+    : [];
+
+  if (normalizedBreakdown.length !== questions.length) {
+    throw new AppError('Interview evaluation did not return all question breakdown items', 502);
+  }
+
+  const questionById = new Map(questions.map((question) => [question.id, question]));
+  const questionUpdates = normalizedBreakdown.map((item) => {
+    const storedQuestion = questionById.get(item.question_id);
+
+    if (!storedQuestion) {
+      throw new AppError('Interview evaluation returned an unknown question id', 502);
+    }
+
+    return interviewsRepository.updateInterviewQuestion(storedQuestion.id, {
+      feedback: item.feedback,
+      score: item.score,
+      question_status: item.question_status,
+      ai_suggestion: item.ai_suggestion,
+      is_skipped: item.question_status === 'skipped',
+      answered_at: storedQuestion.answered_at || new Date().toISOString(),
+    });
+  });
+
+  const updatedQuestions = await Promise.all(questionUpdates);
+  const sessionScoreBreakdown = {
+    correct_answers:
+      evaluation.score_breakdown?.correct_answers ??
+      normalizedBreakdown.filter((item) => item.question_status === 'passed').length,
+    wrong_answers:
+      evaluation.score_breakdown?.wrong_answers ??
+      normalizedBreakdown.filter((item) => item.question_status === 'needs_improvement').length,
+    skipped_answers:
+      evaluation.score_breakdown?.skipped_answers ??
+      normalizedBreakdown.filter((item) => item.question_status === 'skipped').length,
+    total_questions:
+      evaluation.score_breakdown?.total_questions ?? normalizedBreakdown.length,
+  };
+
+  const updatedSession = await interviewsRepository.updateInterviewSession(session.id, {
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+    overall_score: Number(evaluation.overall_score) || 0,
+    score_breakdown: sessionScoreBreakdown,
+    quick_ai_insight: String(evaluation.quick_ai_insight || '').trim(),
+    feedback_text: {
+      ...evaluation.feedback_text,
+      skills_breakdown:
+        normalizeSkillsBreakdown(evaluation.skills_breakdown || []).length > 0
+          ? normalizeSkillsBreakdown(evaluation.skills_breakdown || [])
+          : buildFallbackSkillsBreakdown(session.interview_type),
+    },
+  });
+
+  return buildInterviewResultPayload(
+    {
+      ...updatedSession,
+      career_path: session.career_path,
+      started_at: session.started_at,
+    },
+    updatedQuestions,
+    previousSession,
+  );
+};
+
+const getInterviewSessionResult = async ({ user, sessionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+  if (session.status !== 'completed') {
+    throw new AppError('Interview session is not completed yet', 409);
+  }
+
+  const questions = await getQuestionsForSession(session.id);
+  const previousSession = await interviewsRepository.findPreviousCompletedInterviewSession({
+    userId,
+    careerPathId: session.career_path_id,
+    interviewType: session.interview_type,
+    beforeCompletedAt: session.completed_at,
+    excludeSessionId: session.id,
+  });
+
+  const result = buildInterviewResultPayload(session, questions, previousSession);
+  if (!result.skills_breakdown.length) {
+    result.skills_breakdown = buildFallbackSkillsBreakdown(session.interview_type);
+  }
+
+  return result;
+};
+
+const cancelInterviewSession = async ({ user, sessionId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const session = await getInterviewSessionByUser({ userId, sessionId });
+
+  if (session.status === 'completed') {
+    throw new AppError('Completed interview sessions cannot be cancelled', 400);
+  }
+
+  if (session.status === 'cancelled') {
+    return {
+      session,
+    };
+  }
+
+  const updatedSession = await interviewsRepository.updateInterviewSession(session.id, {
+    status: 'cancelled',
+  });
+
+  return {
+    session: {
+      ...updatedSession,
+      career_path: session.career_path,
+    },
+  };
+};
+
 module.exports = {
   listCareerPaths,
   createInterviewSession,
+  listInterviewSessions,
+  listAdminInterviewSessions,
+  getInterviewSession,
+  getAdminInterviewSession,
+  getInterviewSessionQuestions,
+  updateInterviewSession,
+  answerInterviewQuestion,
+  skipInterviewQuestion,
+  finishInterviewSession,
+  getInterviewSessionResult,
+  cancelInterviewSession,
+  deleteAdminInterviewSession,
   buildInterviewContext,
 };
