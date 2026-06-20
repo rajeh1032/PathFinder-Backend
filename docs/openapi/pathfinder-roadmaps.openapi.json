@@ -1,0 +1,61 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "PathFinder Roadmaps API", "version": "1.0.0" },
+  "servers": [{ "url": "/api/v1" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/roadmaps/me": {
+      "get": {
+        "summary": "Get the authenticated user's active roadmap state",
+        "responses": { "200": { "description": "Roadmap state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapStateEnvelope" } } } }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/roadmaps/generate": {
+      "post": {
+        "summary": "Reuse or generate a personalized roadmap",
+        "description": "Every success returns hasRoadmap, requiredAction, reused, and roadmap. A reused roadmap returns 200; a new roadmap returns 201; upload_cv returns 200.",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "forceRegenerate": { "type": "boolean", "default": false } } } } } },
+        "responses": {
+          "200": { "description": "Reused roadmap or required action", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenerateEnvelope" } } } },
+          "201": { "description": "Newly generated roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenerateEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }
+        }
+      }
+    },
+    "/roadmaps/{id}": {
+      "get": {
+        "summary": "Get an owned roadmap",
+        "parameters": [{ "$ref": "#/components/parameters/RoadmapId" }],
+        "responses": { "200": { "description": "Roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapEnvelope" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/roadmaps/{roadmapId}/steps/{stepId}/progress": {
+      "patch": {
+        "summary": "Update progress for an owned roadmap step",
+        "parameters": [{ "$ref": "#/components/parameters/RoadmapIdNamed" }, { "$ref": "#/components/parameters/StepId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepProgressUpdate" } } } },
+        "responses": { "200": { "description": "Updated roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapEnvelope" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+    "parameters": {
+      "RoadmapId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "RoadmapIdNamed": { "name": "roadmapId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "StepId": { "name": "stepId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "CourseSummary": { "type": "object", "required": ["id", "title", "provider"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "provider": { "type": "string" }, "url": { "type": ["string", "null"], "format": "uri" }, "thumbnailUrl": { "type": ["string", "null"], "format": "uri" }, "videoUrl": { "type": ["string", "null"], "format": "uri" }, "duration": { "type": ["string", "null"] }, "level": { "type": ["string", "null"] } } },
+      "RoadmapStep": { "type": "object", "required": ["id", "title", "description", "status", "progress", "isCompleted", "duration", "level", "isAiRecommended", "recommendedCourses"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "description": { "type": "string" }, "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] }, "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "isCompleted": { "type": "boolean" }, "completedAt": { "type": ["string", "null"], "format": "date-time" }, "duration": { "type": "string" }, "level": { "type": "string" }, "isAiRecommended": { "type": "boolean" }, "recommendedCourses": { "type": "array", "items": { "$ref": "#/components/schemas/CourseSummary" } } } },
+      "RoadmapSection": { "type": "object", "required": ["title", "status", "subtitle", "items"], "properties": { "title": { "type": "string" }, "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] }, "subtitle": { "type": "string" }, "items": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapStep" } } } },
+      "Roadmap": { "type": "object", "required": ["id", "title", "description", "label", "estimatedDuration", "progress", "sections", "insights"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "description": { "type": "string" }, "label": { "type": "string" }, "estimatedDuration": { "type": "string" }, "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "nextStep": { "type": ["string", "null"] }, "sections": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapSection" } }, "insights": { "type": "object", "required": ["projectedSalaryIncrease", "matchingSeniorRoles"], "properties": { "projectedSalaryIncrease": { "type": "integer" }, "matchingSeniorRoles": { "type": "integer" } } } } },
+      "StepProgressUpdate": { "type": "object", "required": ["progress"], "properties": { "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "isCompleted": { "type": "boolean", "description": "When supplied, must equal progress == 100." } } },
+      "RoadmapEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["roadmap"], "properties": { "roadmap": { "$ref": "#/components/schemas/Roadmap" } } } } },
+      "RoadmapStateEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["hasRoadmap", "requiredAction"], "properties": { "hasRoadmap": { "type": "boolean" }, "requiredAction": { "type": ["string", "null"], "enum": ["upload_cv", "generate_roadmap", null] }, "roadmap": { "oneOf": [{ "$ref": "#/components/schemas/Roadmap" }, { "type": "null" }] } } } } },
+      "GenerateEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["hasRoadmap", "requiredAction", "reused", "roadmap"], "properties": { "hasRoadmap": { "type": "boolean" }, "requiredAction": { "type": ["string", "null"], "enum": ["upload_cv", "generate_roadmap", null] }, "reused": { "type": "boolean" }, "roadmap": { "oneOf": [{ "$ref": "#/components/schemas/Roadmap" }, { "type": "null" }] } } } } },
+      "Error": { "type": "object", "required": ["success", "message", "error"], "properties": { "success": { "const": false }, "message": { "type": "string" }, "error": { "type": "object", "required": ["code", "details"], "properties": { "code": { "type": "string" }, "details": { "type": "array", "items": {} } } } } }
+    },
+    "responses": { "Error": { "description": "Stable error envelope", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+  }
+}

@@ -308,7 +308,7 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | `is_free` | `boolean` | Default `true` |
 | `rating` | `numeric(3,2)` | 0 to 5 |
 | `reviews_count` | `integer` | Default `0` |
-| `enrollment_count` | `integer` | Default `0` |
+| `enrollment_count` | `integer` | Default `0`; provider/catalog popularity metadata, not the local PathFinder enrollment total |
 | `popularity_score` | `integer` | Default `0` |
 | `is_active` | `boolean` | Default `true` |
 | `created_by` | `uuid` | FK to `users.id` |
@@ -348,9 +348,13 @@ Recommendations and roadmap course lookups only use courses where `is_active = t
 
 Implemented course API flow:
 
+- `GET /api/v1/courses`: authenticated, database-paginated discovery with allowlisted filters/sorts and user saved/enrollment state.
+- `GET /api/v1/courses/:id`: authenticated active/approved details with skills and user state.
+- `GET /api/v1/courses/saved` plus `POST/DELETE /api/v1/courses/:id/save`: authenticated ownership-scoped, idempotent saved-course management.
+- `GET /api/v1/courses/enrollments`, `POST /api/v1/courses/:id/enroll`, and `PATCH /api/v1/courses/:id/enrollment`: authenticated ownership-scoped enrollment management.
 - `POST /api/v1/courses/import/preview`: admin-only; detects MaharaTech provider/external id, checks duplicates, fetches public metadata, uses `getRagContextForFeature('course_analysis')`, runs AI metadata extraction, and returns matched/unmatched skill previews.
-- `POST /api/v1/courses/import/confirm`: admin-only; saves the approved course and selected `course_skills` mappings. AI does not decide visibility; it only extracts metadata.
-- `GET /api/v1/courses/recommended`: authenticated users; dynamically scores approved active courses against CV missing skills, active roadmap steps, target career skills, and known user skills.
+- `POST /api/v1/courses/import/confirm`: admin-only; independently revalidates the allowlisted MaharaTech URL and matching provider/external id before saving the approved course and selected `course_skills` mappings. AI does not decide visibility; it only extracts metadata.
+- `GET /api/v1/courses/recommended`: authenticated users; deterministically scores only relevant approved active course-skill rows against CV missing skills, active roadmap steps, target career skills, and known user skills.
 
 ### `saved_courses`
 
@@ -382,6 +386,8 @@ Course enrollment and progress tracking.
 | `updated_at` | `timestamptz` | Default `now()` |
 
 Unique key: `user_id`, `course_id`.
+
+Completion constraint: `completed` requires `progress = 100` and a non-null `completed_at`; every other status requires `progress < 100` and `completed_at is null`. Local enrollment counts are derived from this table and do not mutate `courses.enrollment_count`.
 
 ### `cvs`
 

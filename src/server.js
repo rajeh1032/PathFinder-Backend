@@ -65,8 +65,18 @@ app.get('/openapi/roadmaps.json', (req, res) => {
   );
 });
 
+app.get('/openapi/courses.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
+  );
+});
+
 app.use(errorHandler);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;

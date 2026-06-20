@@ -18,6 +18,218 @@ const handleSupabaseError = (error, message, statusCode = 500) => {
   }
 };
 
+const PUBLIC_COURSE_FIELDS = `
+  id,
+  title,
+  description,
+  provider,
+  url,
+  thumbnail_url,
+  video_url,
+  level,
+  duration,
+  category,
+  learning_outcomes,
+  language,
+  price,
+  currency,
+  is_free,
+  rating,
+  reviews_count,
+  enrollment_count,
+  popularity_score,
+  created_at,
+  updated_at,
+  course_skills(confidence, source, skills(id, name, category, level))
+`;
+
+const applyAvailableCourseFilters = (query) => query
+  .eq('is_active', true)
+  .eq('analysis_status', 'approved');
+
+const applyCourseSort = (query, sort) => {
+  if (sort === 'rating') {
+    return query
+      .order('rating', { ascending: false, nullsFirst: false })
+      .order('id', { ascending: true });
+  }
+
+  if (sort === 'popular') {
+    return query
+      .order('popularity_score', { ascending: false })
+      .order('enrollment_count', { ascending: false })
+      .order('id', { ascending: true });
+  }
+
+  return query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: true });
+};
+
+const findCoursesPage = async ({ page, limit, filters }) => {
+  const client = ensureSupabase();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+  let query = applyAvailableCourseFilters(
+    client.from('courses').select(PUBLIC_COURSE_FIELDS, { count: 'exact' }),
+  );
+
+  if (filters.q) {
+    query = query.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%`);
+  }
+  if (filters.category) query = query.ilike('category', filters.category);
+  if (filters.level) query = query.ilike('level', filters.level);
+  if (filters.provider) query = query.ilike('provider', filters.provider);
+  if (filters.language) query = query.ilike('language', filters.language);
+  if (typeof filters.isFree === 'boolean') query = query.eq('is_free', filters.isFree);
+
+  const { data, error, count } = await applyCourseSort(query, filters.sort)
+    .range(from, to);
+  handleSupabaseError(error, 'Failed to fetch courses');
+  return { rows: data || [], totalItems: count || 0 };
+};
+
+const findAvailableCourseById = async (courseId) => {
+  const client = ensureSupabase();
+  const { data, error } = await applyAvailableCourseFilters(
+    client.from('courses').select(PUBLIC_COURSE_FIELDS),
+  )
+    .eq('id', courseId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch course');
+  return data;
+};
+
+const findUserCourseStates = async ({ userId, courseIds }) => {
+  if (!courseIds.length) return { savedRows: [], enrollmentRows: [] };
+  const client = ensureSupabase();
+  const [savedResult, enrollmentResult] = await Promise.all([
+    client
+      .from('saved_courses')
+      .select('id, course_id, created_at')
+      .eq('user_id', userId)
+      .in('course_id', courseIds),
+    client
+      .from('course_enrollments')
+      .select('id, course_id, status, progress, enrolled_at, completed_at, created_at, updated_at')
+      .eq('user_id', userId)
+      .in('course_id', courseIds),
+  ]);
+
+  handleSupabaseError(savedResult.error, 'Failed to fetch saved course state');
+  handleSupabaseError(enrollmentResult.error, 'Failed to fetch enrollment state');
+  return {
+    savedRows: savedResult.data || [],
+    enrollmentRows: enrollmentResult.data || [],
+  };
+};
+
+const findSavedCoursesPage = async ({ userId, page, limit }) => {
+  const client = ensureSupabase();
+  const from = (page - 1) * limit;
+  const { data, error, count } = await client
+    .from('saved_courses')
+    .select(`id, created_at, courses!inner(${PUBLIC_COURSE_FIELDS})`, { count: 'exact' })
+    .eq('user_id', userId)
+    .eq('courses.is_active', true)
+    .eq('courses.analysis_status', 'approved')
+    .order('created_at', { ascending: false })
+    .range(from, from + limit - 1);
+
+  handleSupabaseError(error, 'Failed to fetch saved courses');
+  return { rows: data || [], totalItems: count || 0 };
+};
+
+const findEnrollmentCoursesPage = async ({ userId, page, limit }) => {
+  const client = ensureSupabase();
+  const from = (page - 1) * limit;
+  const { data, error, count } = await client
+    .from('course_enrollments')
+    .select(`id, status, progress, enrolled_at, completed_at, created_at, updated_at, courses!inner(${PUBLIC_COURSE_FIELDS})`, { count: 'exact' })
+    .eq('user_id', userId)
+    .eq('courses.is_active', true)
+    .eq('courses.analysis_status', 'approved')
+    .order('updated_at', { ascending: false })
+    .range(from, from + limit - 1);
+
+  handleSupabaseError(error, 'Failed to fetch course enrollments');
+  return { rows: data || [], totalItems: count || 0 };
+};
+
+const findSavedCourse = async ({ userId, courseId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('saved_courses')
+    .select('id, user_id, course_id, created_at')
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch saved course');
+  return data;
+};
+
+const createSavedCourse = async ({ userId, courseId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('saved_courses')
+    .insert({ user_id: userId, course_id: courseId })
+    .select('id, user_id, course_id, created_at')
+    .single();
+  if (error?.code === '23505') return findSavedCourse({ userId, courseId });
+  handleSupabaseError(error, 'Failed to save course');
+  return data;
+};
+
+const deleteSavedCourse = async ({ userId, courseId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('saved_courses')
+    .delete()
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .select('id');
+  handleSupabaseError(error, 'Failed to unsave course');
+  return (data || []).length > 0;
+};
+
+const findCourseEnrollment = async ({ userId, courseId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('course_enrollments')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch course enrollment');
+  return data;
+};
+
+const createCourseEnrollment = async ({ userId, courseId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('course_enrollments')
+    .insert({ user_id: userId, course_id: courseId })
+    .select('*')
+    .single();
+  if (error?.code === '23505') return findCourseEnrollment({ userId, courseId });
+  handleSupabaseError(error, 'Failed to enroll in course');
+  return data;
+};
+
+const updateCourseEnrollment = async ({ userId, courseId, changes }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('course_enrollments')
+    .update(changes)
+    .eq('user_id', userId)
+    .eq('course_id', courseId)
+    .select('*')
+    .maybeSingle();
+  handleSupabaseError(error, 'Failed to update course enrollment');
+  return data;
+};
+
 const findCourseByProviderExternalId = async ({ provider, externalId }) => {
   if (!externalId) {
     return null;
@@ -44,6 +256,18 @@ const findAllActiveSkills = async () => {
     .order('name', { ascending: true });
 
   handleSupabaseError(error, 'Failed to fetch skills catalog');
+  return data || [];
+};
+
+const findActiveSkillsByNames = async (names) => {
+  if (!names.length) return [];
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('skills')
+    .select('id, name, category, level, aliases')
+    .eq('is_active', true)
+    .in('name', names);
+  handleSupabaseError(error, 'Failed to resolve recommendation skills');
   return data || [];
 };
 
@@ -213,7 +437,8 @@ const findLatestActiveRoadmapSteps = async (userId) => {
   return data || [];
 };
 
-const findApprovedCourseSkillRows = async () => {
+const findApprovedCourseSkillRows = async (skillIds) => {
+  if (!skillIds.length) return [];
   const client = ensureSupabase();
   const { data, error } = await client
     .from('course_skills')
@@ -225,7 +450,7 @@ const findApprovedCourseSkillRows = async () => {
         confidence,
         source,
         skills(id, name, category, level, aliases),
-        courses(
+        courses!inner(
           id,
           title,
           description,
@@ -249,18 +474,35 @@ const findApprovedCourseSkillRows = async () => {
           reviews_count,
           enrollment_count,
           popularity_score,
-          is_active
+          is_active,
+          created_at,
+          updated_at
         )
       `,
-    );
+    )
+    .in('skill_id', skillIds)
+    .eq('courses.is_active', true)
+    .eq('courses.analysis_status', 'approved');
 
   handleSupabaseError(error, 'Failed to fetch approved course recommendations');
   return data || [];
 };
 
 module.exports = {
+  findCoursesPage,
+  findAvailableCourseById,
+  findUserCourseStates,
+  findSavedCoursesPage,
+  findEnrollmentCoursesPage,
+  findSavedCourse,
+  createSavedCourse,
+  deleteSavedCourse,
+  findCourseEnrollment,
+  createCourseEnrollment,
+  updateCourseEnrollment,
   findCourseByProviderExternalId,
   findAllActiveSkills,
+  findActiveSkillsByNames,
   createCourse,
   upsertCourseSkills,
   findLatestCompletedCvAnalysis,

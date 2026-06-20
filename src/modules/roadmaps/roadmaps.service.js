@@ -6,6 +6,7 @@ const {
   buildRoadmapMessages,
 } = require('../ai/prompts/roadmap.prompt');
 const { getRagContextForFeature } = require('../rag/rag.service');
+const { mapCourseSummary } = require('../courses/course.mapper');
 const roadmapsRepository = require('./roadmaps.repository');
 
 const METADATA_MARKER = '\n\n__pathfinder_roadmap_metadata__:';
@@ -249,17 +250,6 @@ const normalizeCourseRows = (rows) => {
       (b.rating || 0) - (a.rating || 0),
   );
 };
-
-const toMobileCourse = (course) => ({
-  id: course.id,
-  title: course.title,
-  provider: course.provider,
-  url: course.url,
-  thumbnailUrl: course.thumbnail_url,
-  videoUrl: course.video_url,
-  duration: course.duration,
-  level: course.level,
-});
 
 const unpackDescription = (value) => {
   const description = String(value || '');
@@ -505,7 +495,7 @@ const formatRoadmapResponse = async ({
     const persistedCourses = safeArray(step.roadmap_step_courses)
       .sort((a, b) => a.recommendation_order - b.recommendation_order)
       .map((recommendation) => getEmbeddedRow(recommendation, 'courses'))
-      .filter(Boolean);
+      .filter((course) => course?.is_active !== false && course?.analysis_status === 'approved');
     const recommendedCourses = persistedCourses.length
       ? persistedCourses
       : (courseMaps.bySkillId.get(step.skill_id) || []).slice(0, 3);
@@ -522,7 +512,7 @@ const formatRoadmapResponse = async ({
       duration: metadata.stepDurations?.[step.step_order] || '2 weeks',
       level: skill?.level || 'beginner',
       isAiRecommended: roadmap.generated_by_type === 'ai',
-      recommendedCourses: recommendedCourses.map(toMobileCourse),
+      recommendedCourses: recommendedCourses.map(mapCourseSummary),
       category: skill?.category || 'Learning',
       stepOrder: step.step_order,
     };
@@ -637,6 +627,8 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
 
   if (existingRoadmap && !forceRegenerate) {
     return {
+      hasRoadmap: true,
+      requiredAction: null,
       reused: true,
       roadmap: await buildExistingRoadmapResponse(existingRoadmap),
     };
@@ -651,6 +643,8 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
     return {
       hasRoadmap: false,
       requiredAction: 'upload_cv',
+      reused: false,
+      roadmap: null,
       message: 'Analyze your CV first to generate a personalized roadmap.',
     };
   }
@@ -743,6 +737,23 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
     };
   }
 
+  const availableCourseMaps = buildCourseMaps(availableCourses);
+  roadmapPlan.steps = roadmapPlan.steps.map((step) => {
+    const recommendedIds = safeArray(step.recommended_course_ids)
+      .filter((courseId) => availableCourseMaps.byId.has(courseId));
+    const deterministicIds = safeArray(
+      availableCourseMaps.bySkillId.get(step.skill_id),
+    ).map((course) => course.id);
+
+    return {
+      ...step,
+      recommended_course_ids: [...new Set([
+        ...recommendedIds,
+        ...deterministicIds,
+      ])].slice(0, 3),
+    };
+  });
+
   const stepDurations = roadmapPlan.steps.reduce((acc, step, index) => {
     acc[index + 1] = step.estimated_duration || '2 weeks';
     return acc;
@@ -773,6 +784,8 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
   const { roadmap, steps } = await fetchRoadmapWithSteps({ roadmapId, userId });
 
   return {
+    hasRoadmap: true,
+    requiredAction: null,
     reused: false,
     roadmap: await formatRoadmapResponse({ roadmap, steps }),
   };
