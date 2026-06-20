@@ -2,7 +2,6 @@ const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../../common/utils/token.js');
-const { cli } = require('winston/lib/winston/config/index.js');
 
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
@@ -31,20 +30,15 @@ const getLookupId = async (client, table, column, value, label) => {
 };
 
 const sanitizeUser = (user) => {
-  if (!user) {
-    return user;
-  }
-
-  const safeUser = { ...user };
-  delete safeUser.password_hash;
+  if (!user) return null;
+  const { password_hash: _passwordHash, ...safeUser } = user;
   return safeUser;
 };
 
 const createUser = async (userData) => {
   const client = ensureSupabase();
-  //TODO: check email uniqueness
 
-  const { data: existingUser, error: fetchError } = await client
+  const { data: existingUser } = await client
     .from('users')
     .select('id')
     .eq('email', userData.email)
@@ -54,7 +48,6 @@ const createUser = async (userData) => {
     throw new AppError('User with this email already exists', 409);
   }
 
-  //TODO: hash password
   const hashedPassword = await bcrypt.hash(userData.password, 12);
   const roleID = await getLookupId(
     client,
@@ -64,7 +57,6 @@ const createUser = async (userData) => {
     'user role',
   );
 
-  //TODO: create user in database
   const { data: newUser, error: insertError } = await client
     .from('users')
     .insert({
@@ -106,7 +98,6 @@ const createUser = async (userData) => {
     userData.currentStatus,
     'current status',
   );
-
   const careerPathId = await getLookupId(
     client,
     'career_paths',
@@ -139,23 +130,18 @@ const createUser = async (userData) => {
     );
   }
 
-  //TODO: Generate access token for the user
   const accessToken = generateToken({
     userId: newUser.id,
     email: newUser.email,
     role: 'user',
   });
-
-  //TODO: Genereate refresh token for the user
   const refreshToken = generateToken(
     { userId: newUser.id, email: newUser.email, role: 'user' },
     '7d',
   );
 
-  //TODO: Return user data and tokens
   return {
-    id: newUser.id,
-    email: newUser.email,
+    user: sanitizeUser(newUser),
     accessToken,
     refreshToken,
   };
@@ -164,7 +150,6 @@ const createUser = async (userData) => {
 const loginUser = async (email, password) => {
   const client = ensureSupabase();
 
-  //TODO: find user by email
   const { data: user, error: fetchError } = await client
     .from('users')
     .select('*')
@@ -179,19 +164,16 @@ const loginUser = async (email, password) => {
     throw new AppError('User not found', 404);
   }
 
-  //TODO: verfiy password
   const isPasswordValid = await bcrypt.compare(password, user.password_hash);
 
   if (!isPasswordValid) {
     throw new AppError('Invalid email or password', 401);
   }
 
-  //TODO: check user is active status
   if (!user.is_active) {
     throw new AppError('User is not active', 401);
   }
 
-  //TODO: Update last login and last active timestamps
   const { data: updatedUser, error: updateError } = await client
     .from('users')
     .update({
@@ -209,7 +191,6 @@ const loginUser = async (email, password) => {
     );
   }
 
-  //* get the role of the user
   const { data: role, error } = await client
     .from('roles')
     .select('name')
@@ -220,29 +201,24 @@ const loginUser = async (email, password) => {
     throw new AppError(error.message, 500);
   }
 
-  console.log(role.name);
-
-  //TODO: Genereate access token and refresh token for the user
   const accessToken = await generateToken({
     userId: user.id,
     email: user.email,
-    role: role.name,
+    role: role?.name || 'user',
   });
 
   const refreshToken = await generateToken(
-    { userId: user.id, email: user.email, role: 'user' },
+    { userId: user.id, email: user.email, role: role?.name || 'user' },
     '7d',
   );
 
-  // TODO: Return user data and tokens
   return { user: sanitizeUser(updatedUser), accessToken, refreshToken };
 };
 
 const getMe = async (userId) => {
   const client = ensureSupabase();
 
-  //TODO: find user by id
-  let { data: user, error: userFetchError } = await client
+  const { data: user, error: userFetchError } = await client
     .from('users')
     .select('name,email,is_active,created_at')
     .eq('id', userId)
@@ -256,30 +232,20 @@ const getMe = async (userId) => {
     throw new AppError('User not found', 404);
   }
 
-  //TODO: get profile of the user
   const { data: profile, error } = await client
     .from('profiles')
-    .select(
-      `
-    university,major,location,headline,bio,avatar_url,
-    education_level (
-      id,
-      education_level
-    ),
-    experience_year (
-      id,
-      experience_level
-    ),
-    current_status (
-      id,
-      current_status
-    ),
-    career_paths (
-      id,
-      title
-    )
-  `,
-    )
+    .select(`
+      university,
+      major,
+      location,
+      headline,
+      bio,
+      avatar_url,
+      education_level(id,education_level),
+      experience_year(id,experience_level),
+      current_status(id,current_status),
+      career_paths(id,title)
+    `)
     .eq('user_id', userId)
     .single();
 
@@ -288,32 +254,99 @@ const getMe = async (userId) => {
   }
 
   user.profile = profile;
-
   return user;
+};
+
+const getCurrentUser = async (userId) => {
+  const client = ensureSupabase();
+
+  const { data: user, error: userError } = await client
+    .from('users')
+    .select('id,name,email,role_id,is_active,last_login_at,last_active_at,created_at,updated_at,roles(name)')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (userError) {
+    throw new AppError(userError.message, 500);
+  }
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  const { data: profile, error: profileError } = await client
+    .from('profiles')
+    .select(`
+      id,
+      user_id,
+      university,
+      major,
+      location,
+      headline,
+      bio,
+      avatar_url,
+      target_career_id,
+      career_paths(id,title,category,description),
+      education_level(id,education_level),
+      experience_year(id,experience_level),
+      current_status(id,current_status)
+    `)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new AppError(profileError.message, 500);
+  }
+
+  const { data: skills, error: skillsError } = await client
+    .from('user_skills')
+    .select('id,level,created_at,skills(id,name,category,level)')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (skillsError) {
+    throw new AppError(skillsError.message, 500);
+  }
+
+  return {
+    user: {
+      ...sanitizeUser(user),
+      role: user.roles?.name || 'user',
+      roles: undefined,
+    },
+    profile: profile || null,
+    skills: (skills || [])
+      .map((row) => ({
+        id: row.skills?.id,
+        userSkillId: row.id,
+        name: row.skills?.name,
+        category: row.skills?.category || 'General',
+        level: row.level || row.skills?.level || null,
+        created_at: row.created_at,
+      }))
+      .filter((skill) => skill.name),
+  };
 };
 
 const changePassword = async (userId, currentPassword, newPassword) => {
   const client = ensureSupabase();
 
-  // Get user
   const { data: user, error: fetchError } = await client
     .from('users')
-    .select('id, password_hash')
+    .select('id,password_hash')
     .eq('id', userId)
     .single();
 
   if (fetchError || !user) {
     throw new AppError('User not found', 404);
   }
-  
-  // Verify current password
+
   const isValid = await bcrypt.compare(currentPassword, user.password_hash);
 
   if (!isValid) {
     throw new AppError('Current password is incorrect', 400);
   }
 
-  // Prevent same password
   const isSamePassword = await bcrypt.compare(newPassword, user.password_hash);
 
   if (isSamePassword) {
@@ -323,10 +356,8 @@ const changePassword = async (userId, currentPassword, newPassword) => {
     );
   }
 
-  // Hash new password
   const hashedPassword = await bcrypt.hash(newPassword, 12);
 
-  // Update password
   const { error: updateError } = await client
     .from('users')
     .update({
@@ -348,5 +379,7 @@ module.exports = {
   createUser,
   loginUser,
   getMe,
+  getCurrentUser,
   changePassword,
+  sanitizeUser,
 };
