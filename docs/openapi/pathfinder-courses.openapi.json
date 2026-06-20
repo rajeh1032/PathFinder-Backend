@@ -1,0 +1,132 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "PathFinder Courses API", "version": "1.0.0" },
+  "servers": [{ "url": "/api/v1" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/courses": {
+      "get": {
+        "summary": "Discover active approved courses",
+        "parameters": [
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "name": "q", "in": "query", "schema": { "type": "string", "maxLength": 120 } },
+          { "name": "category", "in": "query", "schema": { "type": "string" } },
+          { "name": "level", "in": "query", "schema": { "type": "string" } },
+          { "name": "provider", "in": "query", "schema": { "type": "string" } },
+          { "name": "language", "in": "query", "schema": { "type": "string" } },
+          { "name": "isFree", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["newest", "rating", "popular"], "default": "newest" } }
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/CourseList" }, "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/recommended": {
+      "get": {
+        "summary": "Get deterministic personalized recommendations",
+        "parameters": [{ "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 } }],
+        "responses": { "200": { "description": "Recommendations or upload_cv action", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecommendationEnvelope" } } } }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/saved": {
+      "get": {
+        "summary": "List the authenticated user's saved courses",
+        "parameters": [{ "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }],
+        "responses": { "200": { "$ref": "#/components/responses/CourseList" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/enrollments": {
+      "get": {
+        "summary": "List the authenticated user's course enrollments",
+        "parameters": [{ "$ref": "#/components/parameters/Page" }, { "$ref": "#/components/parameters/Limit" }],
+        "responses": { "200": { "$ref": "#/components/responses/CourseList" }, "401": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/{id}": {
+      "get": {
+        "summary": "Get one active approved course",
+        "parameters": [{ "$ref": "#/components/parameters/CourseId" }],
+        "responses": { "200": { "description": "Course details", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CourseEnvelope" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/{id}/save": {
+      "post": {
+        "summary": "Save a course idempotently",
+        "description": "Returns 201 when created and 200 when already saved.",
+        "parameters": [{ "$ref": "#/components/parameters/CourseId" }],
+        "responses": { "200": { "$ref": "#/components/responses/SavedState" }, "201": { "$ref": "#/components/responses/SavedState" }, "404": { "$ref": "#/components/responses/Error" } }
+      },
+      "delete": {
+        "summary": "Remove the authenticated user's saved row idempotently",
+        "parameters": [{ "$ref": "#/components/parameters/CourseId" }],
+        "responses": { "200": { "$ref": "#/components/responses/SavedState" }, "400": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/{id}/enroll": {
+      "post": {
+        "summary": "Create a course enrollment idempotently",
+        "description": "Returns 201 when created and 200 when an enrollment already exists. courses.enrollment_count is provider metadata and is not modified.",
+        "parameters": [{ "$ref": "#/components/parameters/CourseId" }],
+        "responses": { "200": { "$ref": "#/components/responses/EnrollmentState" }, "201": { "$ref": "#/components/responses/EnrollmentState" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/{id}/enrollment": {
+      "patch": {
+        "summary": "Update owned enrollment progress",
+        "parameters": [{ "$ref": "#/components/parameters/CourseId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentUpdate" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/EnrollmentState" }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/import/preview": {
+      "post": {
+        "summary": "Preview a MaharaTech import (admin only)",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportPreviewRequest" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/GenericSuccess" }, "400": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    },
+    "/courses/import/confirm": {
+      "post": {
+        "summary": "Confirm an approved MaharaTech import (admin only)",
+        "description": "Provider and external ID are independently derived from and must match the allowlisted URL. Returns 200 for an existing import and 201 for a new import.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportConfirmRequest" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/GenericSuccess" }, "201": { "$ref": "#/components/responses/GenericSuccess" }, "400": { "$ref": "#/components/responses/Error" }, "403": { "$ref": "#/components/responses/Error" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+    "parameters": {
+      "Page": { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 50, "default": 20 } },
+      "CourseId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "Skill": { "type": "object", "required": ["id", "name"], "properties": { "id": { "type": "string", "format": "uuid" }, "name": { "type": "string" }, "category": { "type": ["string", "null"] }, "level": { "type": ["string", "null"] }, "confidence": { "type": ["number", "null"] }, "source": { "type": ["string", "null"] } } },
+      "Enrollment": { "type": "object", "required": ["id", "status", "progress"], "properties": { "id": { "type": "string", "format": "uuid" }, "status": { "type": "string", "enum": ["active", "paused", "completed", "cancelled"] }, "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "enrolledAt": { "type": ["string", "null"], "format": "date-time" }, "completedAt": { "type": ["string", "null"], "format": "date-time" }, "createdAt": { "type": ["string", "null"], "format": "date-time" }, "updatedAt": { "type": ["string", "null"], "format": "date-time" } } },
+      "Course": {
+        "type": "object",
+        "required": ["id", "title", "provider", "learningOutcomes", "isFree", "reviewsCount", "enrollmentCount", "popularityScore", "skills", "isSaved"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "description": { "type": ["string", "null"] }, "provider": { "type": "string" }, "url": { "type": ["string", "null"], "format": "uri" }, "thumbnailUrl": { "type": ["string", "null"], "format": "uri" }, "videoUrl": { "type": ["string", "null"], "format": "uri" }, "level": { "type": ["string", "null"] }, "duration": { "type": ["string", "null"] }, "category": { "type": ["string", "null"] }, "learningOutcomes": { "type": "array", "items": { "type": "string" } }, "language": { "type": ["string", "null"] }, "price": { "type": ["number", "null"] }, "currency": { "type": ["string", "null"] }, "isFree": { "type": "boolean" }, "rating": { "type": ["number", "null"] }, "reviewsCount": { "type": "integer" }, "enrollmentCount": { "type": "integer", "description": "Provider/catalog metadata, not a locally incremented counter." }, "popularityScore": { "type": "integer" }, "skills": { "type": "array", "items": { "$ref": "#/components/schemas/Skill" } }, "isSaved": { "type": "boolean" }, "enrollment": { "oneOf": [{ "$ref": "#/components/schemas/Enrollment" }, { "type": "null" }] }, "createdAt": { "type": ["string", "null"], "format": "date-time" }, "updatedAt": { "type": ["string", "null"], "format": "date-time" }
+        }
+      },
+      "Reason": { "type": "object", "required": ["code", "params"], "properties": { "code": { "type": "string", "enum": ["covers_missing_skill", "supports_roadmap_skill", "matches_target_career", "level_suitable", "free_course"] }, "params": { "type": "object", "additionalProperties": { "type": "string" } } } },
+      "RecommendationCourse": { "allOf": [{ "$ref": "#/components/schemas/Course" }, { "type": "object", "required": ["matchedSkills", "missingSkillsCovered", "coveragePercentage", "score", "scoreBreakdown", "matchReasons"], "properties": { "matchedSkills": { "type": "array", "items": { "type": "string" } }, "missingSkillsCovered": { "type": "array", "items": { "type": "string" } }, "coveragePercentage": { "type": "integer" }, "score": { "type": "number" }, "scoreBreakdown": { "type": "object", "additionalProperties": { "type": "number" } }, "matchReasons": { "type": "array", "items": { "$ref": "#/components/schemas/Reason" } } } }] },
+      "Pagination": { "type": "object", "required": ["page", "limit", "totalItems", "totalPages"], "properties": { "page": { "type": "integer" }, "limit": { "type": "integer" }, "totalItems": { "type": "integer" }, "totalPages": { "type": "integer" }, "hasNextPage": { "type": "boolean" }, "hasPreviousPage": { "type": "boolean" }, "nextPage": { "type": ["integer", "null"] }, "previousPage": { "type": ["integer", "null"] } } },
+      "Error": { "type": "object", "required": ["success", "message", "error"], "properties": { "success": { "const": false }, "message": { "type": "string" }, "error": { "type": "object", "required": ["code", "details"], "properties": { "code": { "type": "string", "enum": ["VALIDATION_ERROR", "UNAUTHORIZED", "FORBIDDEN", "COURSE_NOT_FOUND", "COURSE_NOT_AVAILABLE", "CONFLICT", "INTERNAL_ERROR"] }, "details": { "type": "array", "items": {} } } } } },
+      "CourseEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["course"], "properties": { "course": { "$ref": "#/components/schemas/Course" } } } } },
+      "RecommendationEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["hasRecommendations", "courses"], "properties": { "hasRecommendations": { "type": "boolean" }, "requiredAction": { "type": ["string", "null"], "enum": ["upload_cv", null] }, "targetCareer": { "type": ["string", "null"] }, "missingSkills": { "type": "array", "items": { "type": "string" } }, "courses": { "type": "array", "items": { "$ref": "#/components/schemas/RecommendationCourse" } } } } } },
+      "EnrollmentUpdate": { "type": "object", "minProperties": 1, "properties": { "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "status": { "type": "string", "enum": ["active", "paused", "completed", "cancelled"] } } },
+      "ImportPreviewRequest": { "type": "object", "required": ["url"], "properties": { "url": { "type": "string", "format": "uri" }, "metadata": { "type": "object" } } },
+      "ImportConfirmRequest": { "type": "object", "required": ["provider", "external_id", "url", "metadata", "analysis"], "properties": { "provider": { "const": "MaharaTech" }, "external_id": { "type": "string" }, "url": { "type": "string", "format": "uri" }, "metadata": { "type": "object" }, "analysis": { "type": "object" }, "matched_skills": { "type": "array", "items": { "type": "object" } }, "unmatched_skills": { "type": "array", "items": { "type": "object" } }, "is_free": { "type": "boolean" } } }
+    },
+    "responses": {
+      "CourseList": { "description": "Paginated courses", "content": { "application/json": { "schema": { "type": "object", "required": ["success", "message", "data", "meta"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "properties": { "courses": { "type": "array", "items": { "$ref": "#/components/schemas/Course" } } } }, "meta": { "type": "object", "properties": { "pagination": { "$ref": "#/components/schemas/Pagination" } } } } } } } },
+      "SavedState": { "description": "Stable saved state", "content": { "application/json": { "schema": { "type": "object" } } } },
+      "EnrollmentState": { "description": "Stable enrollment state", "content": { "application/json": { "schema": { "type": "object" } } } },
+      "GenericSuccess": { "description": "Successful response", "content": { "application/json": { "schema": { "type": "object" } } } },
+      "Error": { "description": "Stable error envelope", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    }
+  }
+}

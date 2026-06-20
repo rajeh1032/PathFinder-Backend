@@ -74,11 +74,19 @@ app.get('/openapi/roadmaps.json', (req, res) => {
   );
 });
 
-app.use(errorHandler);
-
-const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  startJobsSyncScheduler();
+app.get('/openapi/courses.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
+  );
 });
 
-module.exports = { app, server };
+app.use(errorHandler);
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    startJobsSyncScheduler();
+  });
+}
+
+module.exports = app;

@@ -8,24 +8,20 @@ const generateRoadmap = asyncHandler(async (req, res) => {
     forceRegenerate: req.body.forceRegenerate,
   });
 
-  if (result.requiredAction) {
-    return sendSuccess(
-      res,
-      {
-        hasRoadmap: result.hasRoadmap,
-        requiredAction: result.requiredAction,
-      },
-      result.message,
-    );
-  }
-
   return sendSuccess(
     res,
-    { roadmap: result.roadmap },
-    result.reused
-      ? 'Active roadmap fetched successfully'
-      : 'Roadmap generated successfully',
-    result.reused ? 200 : 201,
+    {
+      hasRoadmap: result.hasRoadmap,
+      requiredAction: result.requiredAction,
+      reused: result.reused,
+      roadmap: result.roadmap,
+    },
+    result.requiredAction
+      ? result.message
+      : result.reused
+        ? 'Active roadmap fetched successfully'
+        : 'Roadmap generated successfully',
+    result.requiredAction || result.reused ? 200 : 201,
   );
 });
 

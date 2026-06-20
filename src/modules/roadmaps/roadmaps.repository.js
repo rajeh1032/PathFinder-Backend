@@ -227,7 +227,9 @@ const findRoadmapSteps = async (roadmapId) => {
             thumbnail_url,
             video_url,
             duration,
-            level
+            level,
+            is_active,
+            analysis_status
           )
         )
       `,

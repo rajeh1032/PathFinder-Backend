@@ -1,5 +1,8 @@
+const dns = require('node:dns').promises;
+const net = require('node:net');
 const AppError = require('../../common/errors/AppError');
 const logger = require('../../common/utils/logger');
+const { buildPaginationMeta } = require('../../common/utils/pagination');
 const { generateJsonCompletion } = require('../ai/ai.service');
 const {
   COURSE_ANALYSIS_GEMINI_SCHEMA,
@@ -7,9 +10,17 @@ const {
 } = require('../ai/prompts/courseAnalysis.prompt');
 const { getRagContextForFeature } = require('../rag/rag.service');
 const coursesRepository = require('./courses.repository');
+const {
+  mapCourse,
+  mapEnrollment,
+  mapRecommendationCourse,
+} = require('./course.mapper');
 
 const METADATA_FETCH_TIMEOUT_MS = 10000;
+const METADATA_MAX_BYTES = 1024 * 1024;
+const METADATA_MAX_REDIRECTS = 3;
 const COURSE_RECOMMENDATION_CONFIDENCE_THRESHOLD = 0.6;
+const ALLOWED_COURSE_HOSTS = new Set(['maharatech.gov.eg', 'www.maharatech.gov.eg']);
 
 const getAuthenticatedUserId = (user) => {
   const userId = user?.id || user?.userId;
@@ -75,7 +86,16 @@ const detectCourseProvider = (rawUrl) => {
 
   const hostname = parsedUrl.hostname.toLowerCase();
 
-  if (hostname === 'maharatech.gov.eg' || hostname.endsWith('.maharatech.gov.eg')) {
+  if (
+    parsedUrl.protocol !== 'https:' ||
+    parsedUrl.username ||
+    parsedUrl.password ||
+    parsedUrl.port
+  ) {
+    throw new AppError('Course URL must use HTTPS without credentials or a custom port', 400, null, 'VALIDATION_ERROR');
+  }
+
+  if (ALLOWED_COURSE_HOSTS.has(hostname)) {
     const externalId = parsedUrl.searchParams.get('id');
     if (!externalId) {
       throw new AppError('MaharaTech course URL must include an id query parameter', 400);
@@ -89,6 +109,35 @@ const detectCourseProvider = (rawUrl) => {
   }
 
   throw new AppError('Only MaharaTech course imports are supported for this MVP', 400);
+};
+
+const isPrivateNetworkAddress = (address) => {
+  if (net.isIPv4(address)) {
+    const [a, b] = address.split('.').map(Number);
+    return a === 0 || a === 10 || a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 198 && (b === 18 || b === 19));
+  }
+
+  const normalized = String(address).toLowerCase();
+  return normalized === '::1' || normalized === '::' ||
+    normalized.startsWith('fc') || normalized.startsWith('fd') ||
+    normalized.startsWith('fe8') || normalized.startsWith('fe9') ||
+    normalized.startsWith('fea') || normalized.startsWith('feb') ||
+    normalized.startsWith('::ffff:127.') || normalized.startsWith('::ffff:10.') ||
+    normalized.startsWith('::ffff:192.168.');
+};
+
+const assertPublicCourseUrl = async (rawUrl) => {
+  const providerInfo = detectCourseProvider(rawUrl);
+  const addresses = await dns.lookup(new URL(providerInfo.url).hostname, { all: true });
+  if (!addresses.length || addresses.some(({ address }) => isPrivateNetworkAddress(address))) {
+    throw new AppError('Course URL resolved to a blocked network address', 400, null, 'VALIDATION_ERROR');
+  }
+  return providerInfo;
 };
 
 const stripTags = (value) =>
@@ -160,14 +209,27 @@ const fetchPublicCourseMetadata = async (url) => {
   const timeout = setTimeout(() => controller.abort(), METADATA_FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        'user-agent':
-          'Mozilla/5.0 (compatible; PathFinderCourseImporter/1.0; +https://pathfinder.local)',
-        accept: 'text/html,application/xhtml+xml',
-      },
-      signal: controller.signal,
-    });
+    let currentUrl = (await assertPublicCourseUrl(url)).url;
+    let response;
+
+    for (let redirectCount = 0; redirectCount <= METADATA_MAX_REDIRECTS; redirectCount += 1) {
+      response = await fetch(currentUrl, {
+        headers: {
+          'user-agent':
+            'Mozilla/5.0 (compatible; PathFinderCourseImporter/1.0; +https://pathfinder.local)',
+          accept: 'text/html,application/xhtml+xml',
+        },
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      if (!location || redirectCount === METADATA_MAX_REDIRECTS) {
+        throw new Error('Course page exceeded the redirect limit');
+      }
+      currentUrl = (await assertPublicCourseUrl(new URL(location, currentUrl).toString())).url;
+    }
 
     if (!response.ok) {
       return {
@@ -177,7 +239,30 @@ const fetchPublicCourseMetadata = async (url) => {
       };
     }
 
-    const html = await response.text();
+    const contentType = response.headers.get('content-type') || '';
+    if (!/^(text\/html|application\/xhtml\+xml)(?:;|$)/i.test(contentType)) {
+      return { metadata: {}, blocked: true, reason: 'Course page did not return HTML' };
+    }
+    const declaredLength = Number(response.headers.get('content-length') || 0);
+    if (declaredLength > METADATA_MAX_BYTES) {
+      return { metadata: {}, blocked: true, reason: 'Course page response is too large' };
+    }
+    const reader = response.body?.getReader();
+    const chunks = [];
+    let receivedBytes = 0;
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        receivedBytes += value.byteLength;
+        if (receivedBytes > METADATA_MAX_BYTES) {
+          await reader.cancel();
+          return { metadata: {}, blocked: true, reason: 'Course page response is too large' };
+        }
+        chunks.push(Buffer.from(value));
+      }
+    }
+    const html = reader ? Buffer.concat(chunks).toString('utf8') : await response.text();
     const title =
       findMetaContent(html, ['og:title', 'twitter:title']) ||
       stripTags(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '') ||
@@ -203,7 +288,9 @@ const fetchPublicCourseMetadata = async (url) => {
     return {
       metadata: {},
       blocked: true,
-      reason: error.name === 'AbortError' ? 'Course page request timed out' : error.message,
+      reason: error.name === 'AbortError'
+        ? 'Course page request timed out'
+        : 'Course page could not be fetched safely',
     };
   } finally {
     clearTimeout(timeout);
@@ -425,9 +512,21 @@ const normalizeMatchedSkillsForSave = async (matchedSkills) => {
 
 const confirmCourseImport = async ({ user, payload }) => {
   const userId = getAuthenticatedUserId(user);
+  const providerInfo = detectCourseProvider(payload.url);
+  if (
+    payload.provider !== providerInfo.provider ||
+    payload.external_id !== providerInfo.external_id
+  ) {
+    throw new AppError(
+      'Provider and external ID must match the validated course URL',
+      400,
+      null,
+      'VALIDATION_ERROR',
+    );
+  }
   const duplicate = await coursesRepository.findCourseByProviderExternalId({
-    provider: payload.provider,
-    externalId: payload.external_id,
+    provider: providerInfo.provider,
+    externalId: providerInfo.external_id,
   });
 
   if (duplicate) {
@@ -450,9 +549,9 @@ const confirmCourseImport = async ({ user, payload }) => {
   const course = await coursesRepository.createCourse({
     title: payload.metadata.title,
     description: payload.metadata.description || analysis.summary || null,
-    provider: payload.provider,
-    external_id: payload.external_id || null,
-    url: payload.url,
+    provider: providerInfo.provider,
+    external_id: providerInfo.external_id,
+    url: providerInfo.url,
     thumbnail_url: payload.metadata.thumbnail_url || null,
     level: analysis.level || payload.metadata.level || null,
     duration: analysis.duration || payload.metadata.duration || null,
@@ -464,7 +563,7 @@ const confirmCourseImport = async ({ user, payload }) => {
         ? payload.is_free
         : typeof payload.metadata.is_free === 'boolean'
           ? payload.metadata.is_free
-          : payload.provider === 'MaharaTech',
+          : providerInfo.provider === 'MaharaTech',
     is_active: true,
     analysis_status: 'approved',
     analysis_confidence: analysis.confidence,
@@ -685,38 +784,43 @@ const buildReasons = ({
   const reasons = [];
 
   missingSkillsCovered.slice(0, 3).forEach((skill) => {
-    reasons.push(`Covers missing skill from your CV: ${skill}`);
+    reasons.push({ code: 'covers_missing_skill', params: { skill } });
   });
 
   course.skills
     .filter((skill) => roadmapSkillNames.has(normalizeName(skill.name)))
     .slice(0, 2)
-    .forEach((skill) => reasons.push(`Related to your roadmap step: ${skill.name}`));
+    .forEach((skill) => reasons.push({ code: 'supports_roadmap_skill', params: { skill: skill.name } }));
 
   course.skills
     .filter((skill) => targetCareerSkillNames.has(normalizeName(skill.name)))
     .slice(0, 2)
-    .forEach((skill) => reasons.push(`Relevant to your target career: ${skill.name}`));
+    .forEach((skill) => reasons.push({ code: 'matches_target_career', params: { skill: skill.name } }));
 
   if (levelFit >= 8 && course.level) {
-    reasons.push(`Suitable for ${String(course.level).toLowerCase()} level`);
+    reasons.push({ code: 'level_suitable', params: { level: String(course.level).toLowerCase() } });
   }
 
   if (course.is_free && course.provider) {
-    reasons.push(`Free ${course.provider} course`);
+    reasons.push({ code: 'free_course', params: { provider: course.provider } });
   }
 
-  return uniqueStrings(reasons).slice(0, 6);
+  const seen = new Set();
+  return reasons.filter((reason) => {
+    const key = JSON.stringify(reason);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 6);
 };
 
 const getRecommendedCourses = async ({ user, limit = 10 }) => {
   const userId = getAuthenticatedUserId(user);
-  const [profileContext, latestAnalysis, userSkillRows, courseSkillRows] =
+  const [profileContext, latestAnalysis, userSkillRows] =
     await Promise.all([
       coursesRepository.findUserProfileContext(userId),
       coursesRepository.findLatestCompletedCvAnalysis(userId),
       coursesRepository.findUserSkills(userId),
-      coursesRepository.findApprovedCourseSkillRows(),
     ]);
 
   if (!latestAnalysis) {
@@ -741,6 +845,16 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
   );
   const userSkillNames = new Set(userSkills.map((skill) => normalizeName(skill.name)));
   const analysisMissing = extractAnalysisMissingSkills(latestAnalysis.analysis);
+  const resolvedAnalysisSkills = await coursesRepository.findActiveSkillsByNames(
+    analysisMissing.filter((skill) => !skill.id).map((skill) => skill.name),
+  );
+  const resolvedByName = new Map(
+    resolvedAnalysisSkills.map((skill) => [normalizeName(skill.name), skill]),
+  );
+  const resolvedAnalysisMissing = analysisMissing.map((skill) => ({
+    ...skill,
+    id: skill.id || resolvedByName.get(normalizeName(skill.name))?.id || null,
+  }));
   const targetCareerSkills = mergeSkillsByName(
     careerSkillRows.map(skillFromRow).filter(Boolean),
   );
@@ -748,7 +862,7 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
     roadmapStepRows.map(skillFromRow).filter(Boolean),
   );
   const missingSkills = mergeSkillsByName([
-    ...analysisMissing,
+    ...resolvedAnalysisMissing,
     ...targetCareerSkills.filter(
       (skill) => !userSkillNames.has(normalizeName(skill.name)),
     ),
@@ -761,9 +875,15 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
   const roadmapSkillNames = new Set(
     roadmapSkills.map((skill) => normalizeName(skill.name)),
   );
+  const relevantSkillIds = [...new Set([
+    ...missingSkills,
+    ...targetCareerSkills,
+    ...roadmapSkills,
+  ].map((skill) => skill.id).filter(Boolean))];
+  const courseSkillRows = await coursesRepository.findApprovedCourseSkillRows(relevantSkillIds);
   const candidateCourses = buildCourseRecommendationRows(courseSkillRows);
 
-  const recommendations = candidateCourses
+  const scoredRecommendations = candidateCourses
     .map((course) => {
       const courseSkillNames = new Set(
         course.skills.map((skill) => normalizeName(skill.name)),
@@ -803,14 +923,7 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
       const score = Object.values(scoreBreakdown).reduce((sum, value) => sum + value, 0);
 
       return {
-        id: course.id,
-        title: course.title,
-        provider: course.provider,
-        url: course.url,
-        thumbnailUrl: course.thumbnail_url,
-        level: course.level,
-        duration: course.duration,
-        language: course.language,
+        course,
         matchedSkills: uniqueStrings(matchedSkills),
         missingSkillsCovered: uniqueStrings(missingSkillsCovered),
         coveragePercentage: Math.round(Math.min(1, coverageRatio) * 100),
@@ -825,9 +938,25 @@ const getRecommendedCourses = async ({ user, limit = 10 }) => {
         }),
       };
     })
-    .filter((course) => course.score > 0 && course.matchedSkills.length > 0)
+    .filter((item) => item.score > 0 && item.matchedSkills.length > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
+
+  const states = await coursesRepository.findUserCourseStates({
+    userId,
+    courseIds: scoredRecommendations.map((item) => item.course.id),
+  });
+  const savedIds = new Set(states.savedRows.map((row) => row.course_id));
+  const enrollmentByCourseId = new Map(
+    states.enrollmentRows.map((row) => [row.course_id, row]),
+  );
+  const recommendations = scoredRecommendations.map(({ course, ...extensions }) =>
+    mapRecommendationCourse(course, extensions, {
+      skills: course.skills,
+      isSaved: savedIds.has(course.id),
+      enrollment: enrollmentByCourseId.get(course.id) || null,
+    }),
+  );
 
   return {
     hasRecommendations: recommendations.length > 0,
@@ -843,7 +972,152 @@ const analysisLanguage = (analysis) => {
   return languages.find((language) => /arabic|english/i.test(String(language))) || null;
 };
 
+const requireAvailableCourse = async (courseId) => {
+  const course = await coursesRepository.findAvailableCourseById(courseId);
+  if (!course) {
+    throw new AppError('Course not found or unavailable', 404, null, 'COURSE_NOT_FOUND');
+  }
+  return course;
+};
+
+const mapRowsWithUserState = async ({ userId, rows }) => {
+  const states = await coursesRepository.findUserCourseStates({
+    userId,
+    courseIds: rows.map((row) => row.id),
+  });
+  const savedIds = new Set(states.savedRows.map((row) => row.course_id));
+  const enrollmentByCourseId = new Map(states.enrollmentRows.map((row) => [row.course_id, row]));
+  return rows.map((row) => mapCourse(row, {
+    isSaved: savedIds.has(row.id),
+    enrollment: enrollmentByCourseId.get(row.id) || null,
+  }));
+};
+
+const getCourses = async ({ user, query }) => {
+  const userId = getAuthenticatedUserId(user);
+  const { page, limit, ...filters } = query;
+  const result = await coursesRepository.findCoursesPage({ page, limit, filters });
+  return {
+    courses: await mapRowsWithUserState({ userId, rows: result.rows }),
+    pagination: buildPaginationMeta({ page, limit, totalItems: result.totalItems }),
+  };
+};
+
+const getCourseById = async ({ user, courseId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const course = await requireAvailableCourse(courseId);
+  return (await mapRowsWithUserState({ userId, rows: [course] }))[0];
+};
+
+const getSavedCourses = async ({ user, query }) => {
+  const userId = getAuthenticatedUserId(user);
+  const { page, limit } = query;
+  const result = await coursesRepository.findSavedCoursesPage({ userId, page, limit });
+  const courses = result.rows.map((row) => getEmbeddedRow(row, 'courses')).filter(Boolean);
+  const states = await coursesRepository.findUserCourseStates({
+    userId,
+    courseIds: courses.map((course) => course.id),
+  });
+  const enrollmentByCourseId = new Map(states.enrollmentRows.map((row) => [row.course_id, row]));
+  return {
+    courses: courses.map((course) => mapCourse(course, {
+      isSaved: true,
+      enrollment: enrollmentByCourseId.get(course.id) || null,
+    })),
+    pagination: buildPaginationMeta({ page, limit, totalItems: result.totalItems }),
+  };
+};
+
+const saveCourse = async ({ user, courseId }) => {
+  const userId = getAuthenticatedUserId(user);
+  await requireAvailableCourse(courseId);
+  const existing = await coursesRepository.findSavedCourse({ userId, courseId });
+  if (existing) return { courseId, isSaved: true, alreadySaved: true };
+  await coursesRepository.createSavedCourse({ userId, courseId });
+  return { courseId, isSaved: true, alreadySaved: false };
+};
+
+const unsaveCourse = async ({ user, courseId }) => {
+  const userId = getAuthenticatedUserId(user);
+  const removed = await coursesRepository.deleteSavedCourse({ userId, courseId });
+  return { courseId, isSaved: false, wasSaved: removed };
+};
+
+const getEnrollments = async ({ user, query }) => {
+  const userId = getAuthenticatedUserId(user);
+  const { page, limit } = query;
+  const result = await coursesRepository.findEnrollmentCoursesPage({ userId, page, limit });
+  const courseIds = result.rows
+    .map((row) => getEmbeddedRow(row, 'courses')?.id)
+    .filter(Boolean);
+  const states = await coursesRepository.findUserCourseStates({ userId, courseIds });
+  const savedIds = new Set(states.savedRows.map((row) => row.course_id));
+  return {
+    courses: result.rows.map((row) => {
+      const course = getEmbeddedRow(row, 'courses');
+      return mapCourse(course, {
+        isSaved: savedIds.has(course.id),
+        enrollment: row,
+      });
+    }),
+    pagination: buildPaginationMeta({ page, limit, totalItems: result.totalItems }),
+  };
+};
+
+const enrollCourse = async ({ user, courseId }) => {
+  const userId = getAuthenticatedUserId(user);
+  await requireAvailableCourse(courseId);
+  const existing = await coursesRepository.findCourseEnrollment({ userId, courseId });
+  const enrollment = existing || await coursesRepository.createCourseEnrollment({ userId, courseId });
+  return {
+    courseId,
+    alreadyEnrolled: Boolean(existing),
+    enrollment: mapEnrollment(enrollment),
+  };
+};
+
+const updateEnrollment = async ({ user, courseId, payload }) => {
+  const userId = getAuthenticatedUserId(user);
+  const existing = await coursesRepository.findCourseEnrollment({ userId, courseId });
+  if (!existing) {
+    throw new AppError('Course enrollment not found', 404, null, 'COURSE_NOT_FOUND');
+  }
+
+  let progress = payload.progress ?? Number(existing.progress);
+  let status = payload.status ?? existing.status;
+
+  if (payload.status === 'completed' && payload.progress === undefined) progress = 100;
+  if (payload.progress === 100 && payload.status === undefined) status = 'completed';
+  if (payload.progress !== undefined && payload.progress < 100 && payload.status === undefined && existing.status === 'completed') {
+    status = 'active';
+  }
+  if (status === 'completed' && progress !== 100) {
+    throw new AppError('Completed enrollment requires progress 100', 400, null, 'VALIDATION_ERROR');
+  }
+  if (status !== 'completed' && progress === 100) {
+    throw new AppError('Progress 100 requires completed status', 400, null, 'VALIDATION_ERROR');
+  }
+
+  const completedAt = status === 'completed'
+    ? existing.completed_at || new Date().toISOString()
+    : null;
+  const enrollment = await coursesRepository.updateCourseEnrollment({
+    userId,
+    courseId,
+    changes: { progress, status, completed_at: completedAt },
+  });
+  return { courseId, enrollment: mapEnrollment(enrollment) };
+};
+
 module.exports = {
+  getCourses,
+  getCourseById,
+  getSavedCourses,
+  saveCourse,
+  unsaveCourse,
+  getEnrollments,
+  enrollCourse,
+  updateEnrollment,
   previewCourseImport,
   confirmCourseImport,
   getRecommendedCourses,
