@@ -9,7 +9,14 @@ const generateRoadmap = asyncHandler(async (req, res) => {
   });
 
   if (result.requiredAction) {
-    return sendSuccess(res, result, result.message);
+    return sendSuccess(
+      res,
+      {
+        hasRoadmap: result.hasRoadmap,
+        requiredAction: result.requiredAction,
+      },
+      result.message,
+    );
   }
 
   return sendSuccess(
@@ -42,7 +49,7 @@ const updateStepProgress = asyncHandler(async (req, res) => {
     roadmapId: req.params.roadmapId,
     stepId: req.params.stepId,
     progress: req.body.progress,
-    isCompleted: req.body.is_completed,
+    isCompleted: req.body.isCompleted,
   });
 
   return sendSuccess(res, result, 'Roadmap progress updated successfully');
