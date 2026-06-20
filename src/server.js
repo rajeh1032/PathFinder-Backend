@@ -59,6 +59,12 @@ app.get('/openapi/rag.json', (req, res) => {
   );
 });
 
+app.get('/openapi/roadmaps.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-roadmaps.openapi.json'),
+  );
+});
+
 app.use(errorHandler);
 
 app.listen(PORT, () => {
