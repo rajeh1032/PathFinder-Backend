@@ -34,6 +34,14 @@ app.get('/', (req, res) => {
     supabase: isConfigured ? 'connected' : 'not configured',
   });
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'pathfinder-backend',
+  });
+});
+
 app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/interviews', interviewsRoutes);
@@ -48,6 +56,12 @@ app.use('/api/v1/courses', coursesRoutes);
 app.get('/openapi/rag.json', (req, res) => {
   res.sendFile(
     path.resolve(__dirname, '../docs/openapi/pathfinder-rag.openapi.json'),
+  );
+});
+
+app.get('/openapi/roadmaps.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-roadmaps.openapi.json'),
   );
 });
 

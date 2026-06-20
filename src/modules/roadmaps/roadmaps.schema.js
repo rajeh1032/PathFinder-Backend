@@ -15,9 +15,21 @@ const generateRoadmapSchema = Joi.object({
 
 const updateStepProgressSchema = Joi.object({
   progress: Joi.number().integer().min(0).max(100).required(),
-  is_completed: Joi.boolean(),
+  isCompleted: Joi.boolean().optional(),
 })
-  .min(1)
+  .custom((value, helpers) => {
+    if (
+      typeof value.isCompleted === 'boolean' &&
+      value.isCompleted !== (value.progress === 100)
+    ) {
+      return helpers.message({
+        'any.custom':
+          'isCompleted must be true only when progress is 100 and false otherwise',
+      });
+    }
+
+    return value;
+  })
   .required();
 
 module.exports = {

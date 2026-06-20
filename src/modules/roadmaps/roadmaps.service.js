@@ -261,11 +261,6 @@ const toMobileCourse = (course) => ({
   level: course.level,
 });
 
-const packDescription = (description, metadata) => {
-  const cleanDescription = String(description || '').trim();
-  return `${cleanDescription}${METADATA_MARKER}${JSON.stringify(metadata || {})}`;
-};
-
 const unpackDescription = (value) => {
   const description = String(value || '');
   const markerIndex = description.indexOf(METADATA_MARKER);
@@ -443,11 +438,15 @@ const calculateEstimatedDuration = (steps, metadata = {}) => {
 };
 
 const getStepStatus = (step, index, firstIncompleteIndex) => {
-  if (step.is_completed) {
+  const progress = clampProgress(step.progress);
+
+  if (progress === 100) {
     return 'completed';
   }
 
-  return index === firstIncompleteIndex ? 'in_progress' : 'upcoming';
+  return progress > 0 || index === firstIncompleteIndex
+    ? 'in_progress'
+    : 'upcoming';
 };
 
 const getSectionStatus = (items) => {
@@ -478,7 +477,6 @@ const formatRoadmapResponse = async ({
   roadmap,
   steps,
   courses = null,
-  recommendedCourseIdsByOrder = {},
 }) => {
   const skillIds = mergeSkillsByName(
     steps
@@ -490,22 +488,37 @@ const formatRoadmapResponse = async ({
     courses ||
     normalizeCourseRows(await roadmapsRepository.findCoursesForSkillIds(skillIds));
   const courseMaps = buildCourseMaps(courseList);
-  const firstIncompleteIndex = steps.findIndex((step) => !step.is_completed);
-  const { description, metadata } = unpackDescription(roadmap.description);
+  const firstIncompleteIndex = steps.findIndex(
+    (step) => clampProgress(step.progress) < 100,
+  );
+  const legacy = unpackDescription(roadmap.description);
+  const metadata =
+    roadmap.metadata &&
+    typeof roadmap.metadata === 'object' &&
+    Object.keys(roadmap.metadata).length
+      ? roadmap.metadata
+      : legacy.metadata;
 
   const items = steps.map((step, index) => {
     const skill = skillFromRow(step);
     const status = getStepStatus(step, index, firstIncompleteIndex);
-    const aiCourseIds = recommendedCourseIdsByOrder[step.step_order] || [];
-    const recommendedCourses = aiCourseIds.length
-      ? aiCourseIds.map((id) => courseMaps.byId.get(id)).filter(Boolean)
+    const persistedCourses = safeArray(step.roadmap_step_courses)
+      .sort((a, b) => a.recommendation_order - b.recommendation_order)
+      .map((recommendation) => getEmbeddedRow(recommendation, 'courses'))
+      .filter(Boolean);
+    const recommendedCourses = persistedCourses.length
+      ? persistedCourses
       : (courseMaps.bySkillId.get(step.skill_id) || []).slice(0, 3);
+    const progress = clampProgress(step.progress);
 
     return {
       id: step.id,
       title: step.title,
       description: step.description,
       status,
+      progress,
+      isCompleted: progress === 100,
+      completedAt: progress === 100 ? step.completed_at || null : null,
       duration: metadata.stepDurations?.[step.step_order] || '2 weeks',
       level: skill?.level || 'beginner',
       isAiRecommended: roadmap.generated_by_type === 'ai',
@@ -551,10 +564,10 @@ const formatRoadmapResponse = async ({
   return {
     id: roadmap.id,
     title: roadmap.title,
-    description,
+    description: legacy.description,
     label: metadata.label || 'Professional Path',
     estimatedDuration: calculateEstimatedDuration(steps, metadata),
-    progress: roadmap.progress || 0,
+    progress: clampProgress(roadmap.progress),
     nextStep: nextStep?.title || null,
     sections,
     insights: metadata.insights || {
@@ -636,6 +649,7 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
 
   if (!latestCvAnalysis) {
     return {
+      hasRoadmap: false,
       requiredAction: 'upload_cv',
       message: 'Analyze your CV first to generate a personalized roadmap.',
     };
@@ -729,57 +743,38 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
     };
   }
 
-  if (forceRegenerate) {
-    await roadmapsRepository.pauseActiveRoadmapsForUser(userId);
-  }
-
   const stepDurations = roadmapPlan.steps.reduce((acc, step, index) => {
     acc[index + 1] = step.estimated_duration || '2 weeks';
     return acc;
   }, {});
-  const roadmap = await roadmapsRepository.createRoadmap({
-    user_id: userId,
-    career_path_id: profileRow?.target_career_id || null,
-    title: roadmapPlan.title || fallbackTitle(targetCareer),
-    description: packDescription(roadmapPlan.description, {
-      estimatedDuration: roadmapPlan.estimatedDuration,
-      label: roadmapPlan.label || 'Professional Path',
-      insights: roadmapPlan.insights || {},
-      stepDurations,
-    }),
-    progress: 0,
-    status: 'active',
-    generated_by_type: generatedByType,
-  });
+  const metadata = {
+    estimatedDuration: roadmapPlan.estimatedDuration,
+    label: roadmapPlan.label || 'Professional Path',
+    insights: roadmapPlan.insights || {},
+    stepDurations,
+  };
   const stepRows = roadmapPlan.steps.map((step, index) => ({
-    roadmap_id: roadmap.id,
     skill_id: step.skill_id || null,
     title: step.title,
     description: step.description,
     step_order: index + 1,
-    progress: 0,
-    is_completed: false,
-    completed_at: null,
+    recommended_course_ids: step.recommended_course_ids || [],
   }));
-
-  await roadmapsRepository.createRoadmapSteps(stepRows);
-  const steps = await roadmapsRepository.findRoadmapSteps(roadmap.id);
-  const recommendedCourseIdsByOrder = roadmapPlan.steps.reduce(
-    (acc, step, index) => {
-      acc[index + 1] = step.recommended_course_ids || [];
-      return acc;
-    },
-    {},
-  );
+  const roadmapId = await roadmapsRepository.createRoadmapAtomic({
+    userId,
+    careerPathId: profileRow?.target_career_id || null,
+    title: roadmapPlan.title || fallbackTitle(targetCareer),
+    description: String(roadmapPlan.description || '').trim(),
+    metadata,
+    generatedByType,
+    steps: stepRows,
+    forceRegenerate,
+  });
+  const { roadmap, steps } = await fetchRoadmapWithSteps({ roadmapId, userId });
 
   return {
     reused: false,
-    roadmap: await formatRoadmapResponse({
-      roadmap,
-      steps,
-      courses: availableCourses,
-      recommendedCourseIdsByOrder,
-    }),
+    roadmap: await formatRoadmapResponse({ roadmap, steps }),
   };
 };
 
@@ -798,6 +793,7 @@ const getMyRoadmap = async (user) => {
 
   return {
     hasRoadmap: true,
+    requiredAction: null,
     roadmap: await buildExistingRoadmapResponse(roadmap),
   };
 };
@@ -813,42 +809,34 @@ const getRoadmapById = async ({ user, roadmapId }) => {
 
 const updateStepProgress = async ({ user, roadmapId, stepId, progress, isCompleted }) => {
   const userId = getAuthenticatedUserId(user);
-  const { roadmap } = await fetchRoadmapWithSteps({ roadmapId, userId });
   const normalizedProgress = clampProgress(progress);
-  const shouldComplete =
-    typeof isCompleted === 'boolean' ? isCompleted : normalizedProgress === 100;
+  const derivedIsCompleted = normalizedProgress === 100;
 
-  const step = await roadmapsRepository.updateRoadmapStep({
-    roadmapId: roadmap.id,
-    stepId,
-    payload: {
-      progress: normalizedProgress,
-      is_completed: shouldComplete,
-      completed_at: shouldComplete ? new Date().toISOString() : null,
-    },
-  });
-
-  if (!step) {
-    throw new AppError('Roadmap step not found', 404);
+  if (
+    typeof isCompleted === 'boolean' &&
+    isCompleted !== derivedIsCompleted
+  ) {
+    throw new AppError(
+      'isCompleted must be true only when progress is 100',
+      400,
+    );
   }
 
-  const steps = await roadmapsRepository.findRoadmapSteps(roadmap.id);
-  const totalProgress = steps.length
-    ? Math.round(
-        steps.reduce((sum, currentStep) => sum + clampProgress(currentStep.progress), 0) /
-          steps.length,
-      )
-    : 0;
-  const updatedRoadmap = await roadmapsRepository.updateRoadmap(roadmap.id, {
-    progress: totalProgress,
-    status: totalProgress === 100 ? 'completed' : 'active',
+  await fetchRoadmapWithSteps({ roadmapId, userId });
+  await roadmapsRepository.updateRoadmapStepProgressAtomic({
+    userId,
+    roadmapId,
+    stepId,
+    progress: normalizedProgress,
+    isCompleted: derivedIsCompleted,
+  });
+  const { roadmap, steps } = await fetchRoadmapWithSteps({
+    roadmapId,
+    userId,
   });
 
   return {
-    roadmap: await formatRoadmapResponse({
-      roadmap: updatedRoadmap,
-      steps,
-    }),
+    roadmap: await formatRoadmapResponse({ roadmap, steps }),
   };
 };
 

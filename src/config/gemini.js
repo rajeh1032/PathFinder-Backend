@@ -19,6 +19,83 @@ const getBaseUrl = (model, method) =>
 
 const buildResponseUsage = (payload = {}) => payload?.usageMetadata || null;
 
+const normalizeText = (value) => String(value ?? '').trim();
+
+const asGeminiContent = (value, defaultRole = 'user') => {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const text = normalizeText(value);
+    return text ? { role: defaultRole, parts: [{ text }] } : null;
+  }
+
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((part) => {
+        if (typeof part === 'string') {
+          const text = normalizeText(part);
+          return text ? { text } : null;
+        }
+
+        if (part && typeof part === 'object' && part.text !== undefined) {
+          const text = normalizeText(part.text);
+          return text ? { text } : null;
+        }
+
+        return null;
+      })
+      .filter(Boolean);
+
+    return parts.length ? { role: defaultRole, parts } : null;
+  }
+
+  if (typeof value === 'object') {
+    const role = value.role || defaultRole;
+    const parts = Array.isArray(value.parts)
+      ? value.parts
+          .map((part) => {
+            if (typeof part === 'string') {
+              const text = normalizeText(part);
+              return text ? { text } : null;
+            }
+
+            if (part && typeof part === 'object' && part.text !== undefined) {
+              const text = normalizeText(part.text);
+              return text ? { text } : null;
+            }
+
+            return null;
+          })
+          .filter(Boolean)
+      : [];
+
+    return parts.length ? { role, parts } : null;
+  }
+
+  return null;
+};
+
+const normalizeContents = (contents) => {
+  if (Array.isArray(contents)) {
+    return contents.map((content) => asGeminiContent(content)).filter(Boolean);
+  }
+
+  const content = asGeminiContent(contents);
+  return content ? [content] : [];
+};
+
+const normalizeSystemInstruction = (systemInstruction) => {
+  const instruction = asGeminiContent(systemInstruction, 'user');
+  if (!instruction) {
+    return undefined;
+  }
+
+  delete instruction.role;
+  return instruction;
+};
+
 const extractText = (payload = {}) => {
   const candidates = payload?.candidates || [];
   const parts = candidates[0]?.content?.parts || [];
@@ -57,11 +134,11 @@ const models = {
       throw new Error('Gemini is not configured');
     }
 
-    const { response, payload } = await postJson(
+  const { response, payload } = await postJson(
       `${getBaseUrl(request.model || config.model, 'generateContent')}?key=${encodeURIComponent(config.apiKey)}`,
       {
-        systemInstruction: request.systemInstruction,
-        contents: request.contents,
+        systemInstruction: normalizeSystemInstruction(request.systemInstruction),
+        contents: normalizeContents(request.contents),
         generationConfig: request.config || request.generationConfig || {},
       },
     );
@@ -87,13 +164,21 @@ const models = {
       throw new Error('Gemini is not configured');
     }
 
-    const { response, payload } = await postJson(
+    const inputText = String(
+      request.content || request.contents || request.input || request.text || '',
+    );
+  const { response, payload } = await postJson(
       `${getBaseUrl(request.model || config.embeddingModel, 'embedContent')}?key=${encodeURIComponent(config.apiKey)}`,
       {
         model: request.model || config.embeddingModel,
-        content: request.content || request.contents || request.input || request.text || '',
+        content: {
+          parts: [{ text: inputText }],
+        },
         taskType: request.taskType || 'SEMANTIC_SIMILARITY',
-        outputDimensionality: request.config?.outputDimensionality || request.outputDimensionality || config.embeddingDimensions,
+        outputDimensionality:
+          request.config?.outputDimensionality ||
+          request.outputDimensionality ||
+          config.embeddingDimensions,
       },
     );
 
