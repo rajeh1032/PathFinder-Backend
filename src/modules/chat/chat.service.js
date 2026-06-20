@@ -100,7 +100,18 @@ async function getUserCV(userId) {
 async function createChatSession({ userId, title }) {
   const client = ensureSupabase();
   await assertUserExists(userId);
+  // 1. Archive any previous active sessions for this user so only the new one is active
+  const { error: archiveError } = await client
+    .from('chat_sessions')
+    .update({ status: 'archived' })
+    .eq('user_id', userId)
+    .eq('status', 'active');
 
+  if (archiveError) {
+    throwDatabaseError(archiveError, 'Failed to archive previous chat sessions');
+  }
+
+  // 2. Create the new active session
   const { data, error } = await client
     .from('chat_sessions')
     .insert({
@@ -296,7 +307,7 @@ async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
     const genAI = getGenAI();
 
     const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.1-flash-lite',
       systemInstruction: buildSystemPrompt(cv, ragContext),
     });
 
