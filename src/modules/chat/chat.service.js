@@ -2,14 +2,6 @@ const AppError = require('../../common/errors/AppError');
 const { config: geminiConfig } = require('../../config/gemini');
 const { supabase, isConfigured } = require('../../config/supabase');
 const { getRagContextForFeature } = require('../rag/rag.service');
-
-// const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const getGenAI = () => {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new AppError('GEMINI_API_KEY is not configured', 500);
-  }
-  return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-};
 const geminiService = require('../ai/gemini.service');
 
 const ensureSupabase = () => {
@@ -279,10 +271,6 @@ async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
   try {
     const result = await geminiService.generateContent({
       model: geminiConfig.model,
-    const genAI = getGenAI();
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3.1-flash-lite',
       systemInstruction: buildSystemPrompt(cv, ragContext),
       contents,
     });
@@ -300,34 +288,6 @@ async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
     throw err;
   }
 }
-
-// Keep the legacy Gemini path fully replaced by the wrapper above.
-/*
-async function sendToGemini({ cv, history, message }) {
-  const contents = [
-    ...history.map((msg) => ({
-      role: msg.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: msg.message }],
-    })),
-    {
-      role: 'user',
-      parts: [{ text: message }],
-    },
-  ];
-
-  const result = await geminiService.generateContent({
-    model: geminiConfig.model,
-    systemInstruction: buildSystemPrompt(cv),
-    contents,
-  });
-
-  return {
-    text: result.text,
-    usage: result.usage,
-  };
-  }
-}
-*/
 
 async function softDeleteSession(sessionId) {
   const client = ensureSupabase();
