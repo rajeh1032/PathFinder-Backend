@@ -85,13 +85,8 @@ app.use(errorHandler);
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+    startJobsSyncScheduler();
   });
 }
 
 module.exports = app;
-const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  startJobsSyncScheduler();
-});
-
-module.exports = { app, server };
