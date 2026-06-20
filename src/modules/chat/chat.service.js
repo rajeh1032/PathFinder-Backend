@@ -252,77 +252,42 @@ ${ragContext ? `## ADDITIONAL KNOWLEDGE BASE:\n${ragContext}` : ''}
 - Use bullet points for lists
 - End with one focused follow-up question when needed`;
 }
-// async function sendToGemini({ cv, history, message, ragContext }) {
-//   const genAI = getGenAI();
-//   console.log('Gemini KEY:', process.env.GEMINI_API_KEY?.slice(0, 15));
-//   console.log('genAI instance:', !!genAI);
-//   if (!process.env.GEMINI_API_KEY) {
-//     throw new AppError('GEMINI_API_KEY is not configured', 500);
-//   }
 
-//   const model = genAI.getGenerativeModel({
-//     // model: 'gemini-1.5-flash',
-//     model: 'gemini-1.0-pro'
-//   });
-
-//   const geminiHistory = history.map((msg) => ({
-//     role: msg.sender === 'user' ? 'user' : 'model',
-//     parts: [{ text: msg.message }],
-//   }));
-
-//   const systemPrompt = buildSystemPrompt(cv, ragContext);
-
-//   const chatSession = model.startChat({  
-//     history: [
-//       {
-//         role: 'user',
-//         parts: [{ text: systemPrompt }],
-//       },
-//       {
-//         role: 'model',
-//         parts: [{ text: 'Understood. I will follow these instructions.' }],
-//       },
-//       ...geminiHistory,
-//     ],
-//   });
-
-//   const result = await chatSession.sendMessage(message);
-
-//   return {
-//     text: result.response.text(),
-//     usage: result.response.usageMetadata,
-//   };
-// }
 async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
-  try {
-    const genAI = getGenAI();
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      systemInstruction: buildSystemPrompt(cv, ragContext),
-    });
-
-    const geminiHistory = (history || []).map((msg) => ({
+  const contents = [
+    ...(history || []).map((msg) => ({
       role: msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.message }],
-    }));
+    })),
+    {
+      role: 'user',
+      parts: [{ text: message }],
+    },
+  ];
 
-    const chat = model.startChat({ history: geminiHistory });
-    const result = await chat.sendMessage(message);
-## EXAMPLES OF WHAT YOU CAN HELP WITH:
-- "What skills am I missing for [role]?"
-- "How can I improve my CV score?"
-- "Am I ready for a senior role?"
-- "What should I add to my CV?"
-- "Prepare me for an interview for [role]"
+  try {
+    const result = await geminiService.generateContent({
+      model: geminiConfig.model,
+      systemInstruction: buildSystemPrompt(cv, ragContext),
+      contents,
+    });
 
-## EXAMPLES OF WHAT YOU MUST REFUSE:
-- "Write me a Python script"
-- "What's the capital of France?"
-- "Tell me a joke"
-For these, say: "I can only help you with your CV and career goals. Try asking me about improving your CV or preparing for interviews."`;
+    return {
+      text: result.text,
+      usage: result.usage || result.usageMetadata || null,
+    };
+  } catch (err) {
+    const status = err && (err.status || err.statusCode || err.code);
+    if ((status === 429 || status === '429') && retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      return sendToGemini({ cv, history, message, ragContext }, retries - 1);
+    }
+    throw err;
+  }
 }
 
+// Keep the legacy Gemini path fully replaced by the wrapper above.
+/*
 async function sendToGemini({ cv, history, message }) {
   const contents = [
     ...history.map((msg) => ({
@@ -341,19 +306,13 @@ async function sendToGemini({ cv, history, message }) {
     contents,
   });
 
-    return {
-      text: result.text,
-      usage: result.usage,
-    };
-  } catch (err) {
-    const status = err && (err.status || err.statusCode || err.code);
-    if ((status === 429 || status === '429') && retries > 0) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      return sendToGemini({ cv, history, message, ragContext }, retries - 1);
-    }
-    throw err;
+  return {
+    text: result.text,
+    usage: result.usage,
+  };
   }
 }
+*/
 
 async function softDeleteSession(sessionId) {
   const client = ensureSupabase();
