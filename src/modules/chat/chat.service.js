@@ -1,5 +1,5 @@
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const AppError = require('../../common/errors/AppError');
+const { config: geminiConfig } = require('../../config/gemini');
 const { supabase, isConfigured } = require('../../config/supabase');
 const { getRagContextForFeature } = require('../rag/rag.service');
 
@@ -10,6 +10,8 @@ const getGenAI = () => {
   }
   return new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 };
+const geminiService = require('../ai/gemini.service');
+
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
     throw new AppError('Supabase is not configured', 500);
@@ -250,67 +252,29 @@ ${ragContext ? `## ADDITIONAL KNOWLEDGE BASE:\n${ragContext}` : ''}
 - Use bullet points for lists
 - End with one focused follow-up question when needed`;
 }
-// async function sendToGemini({ cv, history, message, ragContext }) {
-//   const genAI = getGenAI();
-//   console.log('Gemini KEY:', process.env.GEMINI_API_KEY?.slice(0, 15));
-//   console.log('genAI instance:', !!genAI);
-//   if (!process.env.GEMINI_API_KEY) {
-//     throw new AppError('GEMINI_API_KEY is not configured', 500);
-//   }
 
-//   const model = genAI.getGenerativeModel({
-//     // model: 'gemini-1.5-flash',
-//     model: 'gemini-1.0-pro'
-//   });
-
-//   const geminiHistory = history.map((msg) => ({
-//     role: msg.sender === 'user' ? 'user' : 'model',
-//     parts: [{ text: msg.message }],
-//   }));
-
-//   const systemPrompt = buildSystemPrompt(cv, ragContext);
-
-//   const chatSession = model.startChat({  
-//     history: [
-//       {
-//         role: 'user',
-//         parts: [{ text: systemPrompt }],
-//       },
-//       {
-//         role: 'model',
-//         parts: [{ text: 'Understood. I will follow these instructions.' }],
-//       },
-//       ...geminiHistory,
-//     ],
-//   });
-
-//   const result = await chatSession.sendMessage(message);
-
-//   return {
-//     text: result.response.text(),
-//     usage: result.response.usageMetadata,
-//   };
-// }
 async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
-  try {
-    const genAI = getGenAI();
-
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.0-flash',
-      systemInstruction: buildSystemPrompt(cv, ragContext),
-    });
-
-    const geminiHistory = (history || []).map((msg) => ({
+  const contents = [
+    ...(history || []).map((msg) => ({
       role: msg.sender === 'user' ? 'user' : 'model',
       parts: [{ text: msg.message }],
-    }));
+    })),
+    {
+      role: 'user',
+      parts: [{ text: message }],
+    },
+  ];
 
-    const chat = model.startChat({ history: geminiHistory });
-    const result = await chat.sendMessage(message);
+  try {
+    const result = await geminiService.generateContent({
+      model: geminiConfig.model,
+      systemInstruction: buildSystemPrompt(cv, ragContext),
+      contents,
+    });
 
     return {
-      text: result.response.text(),
-      usage: result.response.usageMetadata,
+      text: result.text,
+      usage: result.usage || result.usageMetadata || null,
     };
   } catch (err) {
     const status = err && (err.status || err.statusCode || err.code);
@@ -321,6 +285,34 @@ async function sendToGemini({ cv, history, message, ragContext }, retries = 3) {
     throw err;
   }
 }
+
+// Keep the legacy Gemini path fully replaced by the wrapper above.
+/*
+async function sendToGemini({ cv, history, message }) {
+  const contents = [
+    ...history.map((msg) => ({
+      role: msg.sender === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.message }],
+    })),
+    {
+      role: 'user',
+      parts: [{ text: message }],
+    },
+  ];
+
+  const result = await geminiService.generateContent({
+    model: geminiConfig.model,
+    systemInstruction: buildSystemPrompt(cv),
+    contents,
+  });
+
+  return {
+    text: result.text,
+    usage: result.usage,
+  };
+  }
+}
+*/
 
 async function softDeleteSession(sessionId) {
   const client = ensureSupabase();

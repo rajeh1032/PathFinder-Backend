@@ -42,10 +42,12 @@ const generateContent = async ({
 }) => {
   ensureConfigured();
 
+  const { systemInstruction, ...generationConfig } = buildGenerationConfig(options);
   const request = {
     model,
     contents,
-    config: cleanConfig(buildGenerationConfig(options)),
+    systemInstruction,
+    config: cleanConfig(generationConfig),
   };
 
   const response = await gemini.models.generateContent(request);

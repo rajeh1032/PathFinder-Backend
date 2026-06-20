@@ -201,6 +201,247 @@ const listUserInterviewSessions = async (userId) => {
   return data || [];
 };
 
+const listInterviewSessionHistory = async (userId) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_sessions')
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at,
+        career_path:career_paths(
+          id,
+          title,
+          category,
+          difficulty_level
+        )
+      `,
+    )
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+
+  handleSupabaseError(error, 'Failed to fetch interview session history');
+  return data || [];
+};
+
+const listAllInterviewSessionHistory = async () => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_sessions')
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at,
+        user:users(
+          id,
+          name,
+          email
+        ),
+        career_path:career_paths(
+          id,
+          title,
+          category,
+          difficulty_level
+        )
+      `,
+    )
+    .order('created_at', { ascending: false });
+
+  handleSupabaseError(error, 'Failed to fetch interview session history');
+  return data || [];
+};
+
+const findInterviewSessionById = async (sessionId, userId = null) => {
+  const client = ensureSupabase();
+  let query = client
+    .from('interview_sessions')
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at,
+        career_path:career_paths(
+          id,
+          title,
+          category,
+          difficulty_level
+        )
+      `,
+    )
+    .eq('id', sessionId);
+
+  if (userId) {
+    query = query.eq('user_id', userId);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch interview session');
+  return data;
+};
+
+const findAdminInterviewSessionById = async (sessionId) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_sessions')
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at,
+        user:users(
+          id,
+          name,
+          email
+        ),
+        career_path:career_paths(
+          id,
+          title,
+          category,
+          difficulty_level
+        )
+      `,
+    )
+    .eq('id', sessionId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch interview session');
+  return data;
+};
+
+const listCareerPathSkills = async (careerPathId) => {
+  if (!careerPathId) {
+    return [];
+  }
+
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('career_path_skills')
+    .select('skill_id, required_level, priority, skills(id, name, category, level)')
+    .eq('career_path_id', careerPathId)
+    .order('priority', { ascending: true });
+
+  handleSupabaseError(error, 'Failed to fetch career path skills');
+
+  return (data || [])
+    .map((row) => ({
+      id: row.skills?.id || row.skill_id,
+      name: row.skills?.name || null,
+      category: row.skills?.category || null,
+      level: row.required_level || row.skills?.level || null,
+      priority: row.priority ?? null,
+    }))
+    .filter((skill) => skill.name);
+};
+
+const findPreviousCompletedInterviewSession = async ({
+  userId,
+  careerPathId,
+  interviewType,
+  beforeCompletedAt,
+  excludeSessionId = null,
+}) => {
+  if (!userId || !careerPathId || !interviewType || !beforeCompletedAt) {
+    return null;
+  }
+
+  const client = ensureSupabase();
+  let query = client
+    .from('interview_sessions')
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at
+      `,
+    )
+    .eq('user_id', userId)
+    .eq('career_path_id', careerPathId)
+    .eq('interview_type', interviewType)
+    .eq('status', 'completed')
+    .lt('completed_at', beforeCompletedAt)
+    .order('completed_at', { ascending: false })
+    .limit(1);
+
+  if (excludeSessionId) {
+    query = query.neq('id', excludeSessionId);
+  }
+
+  const { data, error } = await query.maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch previous interview session');
+  return data;
+};
+
 const listQuestionsBySessionIds = async (sessionIds = []) => {
   if (!sessionIds.length) {
     return [];
@@ -209,7 +450,26 @@ const listQuestionsBySessionIds = async (sessionIds = []) => {
   const client = ensureSupabase();
   const { data, error } = await client
     .from('interview_questions')
-    .select('id, interview_session_id, question_order, question, options, correct_option_index, question_format')
+    .select(
+      `
+        id,
+        interview_session_id,
+        question_order,
+        question,
+        options,
+        correct_option_index,
+        question_format,
+        user_answer,
+        is_skipped,
+        answer_type,
+        answered_at,
+        feedback,
+        score,
+        question_status,
+        ai_suggestion,
+        generated_by_type
+      `,
+    )
     .in('interview_session_id', sessionIds)
     .order('interview_session_id', { ascending: true })
     .order('question_order', { ascending: true });
@@ -243,6 +503,119 @@ const createInterviewQuestions = async (rows = []) => {
 
   handleSupabaseError(error, 'Failed to create interview questions');
   return data || [];
+};
+
+const findInterviewQuestionById = async ({ sessionId, questionId, userId = null }) => {
+  const client = ensureSupabase();
+
+  const query = client
+    .from('interview_questions')
+    .select(
+      `
+        id,
+        interview_session_id,
+        question_order,
+        question,
+        options,
+        correct_option_index,
+        question_format,
+        user_answer,
+        is_skipped,
+        answer_type,
+        answered_at,
+        feedback,
+        score,
+        question_status,
+        ai_suggestion,
+        generated_by_type
+      `,
+    )
+    .eq('id', questionId)
+    .eq('interview_session_id', sessionId);
+
+  const { data, error } = await query.maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch interview question');
+  return data;
+};
+
+const updateInterviewQuestion = async (questionId, payload) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_questions')
+    .update(payload)
+    .eq('id', questionId)
+    .select(
+      `
+        id,
+        interview_session_id,
+        question_order,
+        question,
+        options,
+        correct_option_index,
+        question_format,
+        user_answer,
+        is_skipped,
+        answer_type,
+        answered_at,
+        feedback,
+        score,
+        question_status,
+        ai_suggestion,
+        generated_by_type
+      `,
+    )
+    .single();
+
+  handleSupabaseError(error, 'Failed to update interview question');
+  return data;
+};
+
+const updateInterviewSession = async (sessionId, payload) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_sessions')
+    .update(payload)
+    .eq('id', sessionId)
+    .select(
+      `
+        id,
+        user_id,
+        career_path_id,
+        job_id,
+        status,
+        interview_type,
+        total_questions,
+        started_at,
+        completed_at,
+        overall_score,
+        score_breakdown,
+        quick_ai_insight,
+        feedback_text,
+        recording_url,
+        created_at,
+        updated_at
+      `,
+    )
+    .single();
+
+  handleSupabaseError(error, 'Failed to update interview session');
+  return data;
+};
+
+const deleteInterviewSession = async (sessionId) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('interview_sessions')
+    .delete()
+    .eq('id', sessionId)
+    .select('id')
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to delete interview session');
+  return data;
 };
 
 const listQuestionSetCacheCandidates = async ({
@@ -327,6 +700,7 @@ const createQuestionSetCache = async (payload) => {
 module.exports = {
   listActiveCareerPaths,
   findCareerPathById,
+  listCareerPathSkills,
   findUserProfileByUserId,
   findExperienceYearById,
   findCurrentStatusById,
@@ -334,9 +708,18 @@ module.exports = {
   listUserCvs,
   listCvSkills,
   listUserInterviewSessions,
+  listInterviewSessionHistory,
+  listAllInterviewSessionHistory,
+  findInterviewSessionById,
+  findAdminInterviewSessionById,
+  findPreviousCompletedInterviewSession,
   listQuestionsBySessionIds,
   createInterviewSession,
   createInterviewQuestions,
+  findInterviewQuestionById,
+  updateInterviewQuestion,
+  updateInterviewSession,
+  deleteInterviewSession,
   listQuestionSetCacheCandidates,
   createQuestionSetCache,
   normalizeEmbeddingValue,
