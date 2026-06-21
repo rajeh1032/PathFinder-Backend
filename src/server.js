@@ -22,6 +22,7 @@ const coverLettersRoutes = require("./modules/coverLetters/coverLetters.routes")
 const dashboardRoutes = require("./modules/dashboard/dashboard.routes");
 const skillsRoutes = require("./modules/skills/skills.routes");
 const aiLogsRoutes = require("./modules/aiLogs/aiLogs.routes");
+const settingsRoutes = require("./modules/settings/settings.routes");
 const {
   startJobsSyncScheduler,
 } = require("./common/schedulers/jobsSyncScheduler");
@@ -54,11 +55,11 @@ app.get("/health", (req, res) => {
   });
 });
 
-app.use('/api/chat', chatRouter);
-app.use('/test', testRoutes);
-app.use('/api/interviews', interviewsRoutes);
-app.use('/api/v1/interviews', interviewsRoutes);
-app.use(`${apiPrefix}/chat`,chatRouter)
+app.use("/api/chat", chatRouter);
+app.use("/test", testRoutes);
+app.use("/api/interviews", interviewsRoutes);
+app.use("/api/v1/interviews", interviewsRoutes);
+app.use(`${apiPrefix}/chat`, chatRouter);
 app.use("/api/chat", chatRouter);
 app.use("/test", testRoutes);
 app.use("/api/interviews", interviewsRoutes);
@@ -76,6 +77,7 @@ app.use(`${apiPrefix}/profiles`, profileRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 app.use(`${apiPrefix}/skills`, skillsRoutes);
 app.use(`${apiPrefix}/ai-logs`, aiLogsRoutes);
+app.use(`${apiPrefix}/settings`, settingsRoutes);
 
 app.get("/openapi/rag.json", (req, res) => {
   res.sendFile(
