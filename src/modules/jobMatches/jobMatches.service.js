@@ -96,7 +96,15 @@ const saveMatch = async (userId, job, match) => {
   return data;
 };
 
-const generateMatches = async (userId, { jobId, limit, concurrency } = {}) => {
+const generateMatches = async (userId, {
+  jobId,
+  limit,
+  concurrency,
+  keyword,
+  location,
+  category,
+  level,
+} = {}) => {
   const [skills, profile] = await Promise.all([
     jobsRepository.listUserSkills(userId),
     jobsRepository.getUserProfile(userId),
@@ -106,7 +114,14 @@ const generateMatches = async (userId, { jobId, limit, concurrency } = {}) => {
   const safeConcurrency = Math.min(5, Math.max(1, Number(concurrency) || 2));
   const jobs = jobId
     ? [await jobsRepository.findJobById(jobId)]
-    : (await jobsRepository.listJobs({ limit: safeLimit, status: 'published' })).jobs;
+    : (await jobsRepository.listJobs({
+      limit: safeLimit,
+      status: 'published',
+      keyword,
+      location,
+      category,
+      level,
+    })).jobs;
 
   const matches = await mapWithConcurrency(jobs.filter(Boolean), safeConcurrency, async (job) => {
     const match = await createMatch(userId, job, skills, profile, ragContext);

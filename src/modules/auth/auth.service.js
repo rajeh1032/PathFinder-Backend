@@ -2,6 +2,9 @@ const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../../common/utils/token.js');
+const {
+  scheduleJobsPreparationForUser,
+} = require('../jobs/jobsPreparation.service');
 
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
@@ -139,6 +142,13 @@ const createUser = async (userData) => {
     { userId: newUser.id, email: newUser.email, role: 'user' },
     '7d',
   );
+
+  scheduleJobsPreparationForUser({
+    userId: newUser.id,
+    reason: 'register',
+    syncIfEmpty: true,
+    generateMatches: true,
+  });
 
   return {
     user: sanitizeUser(newUser),

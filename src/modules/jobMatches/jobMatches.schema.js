@@ -3,6 +3,10 @@ const uuidParamSchema = Joi.object({ id: Joi.string().uuid().required() });
 const generateJobMatchesSchema = Joi.object({
   userId: Joi.string().uuid(),
   jobId: Joi.string().uuid(),
+  keyword: Joi.string().trim().max(140),
+  location: Joi.string().trim().max(120),
+  category: Joi.string().trim().max(80),
+  level: Joi.string().trim().max(80),
   limit: Joi.number().integer().min(1).max(100).default(10),
   concurrency: Joi.number().integer().min(1).max(5).default(2),
 });

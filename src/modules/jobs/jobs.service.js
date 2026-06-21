@@ -1,6 +1,7 @@
 ﻿const axios = require('axios');
 const AppError = require('../../common/errors/AppError');
 const jobsRepository = require('./jobs.repository');
+const { prepareJobsForUser } = require('./jobsPreparation.service');
 
 const KNOWN_SKILLS = [
   'HTML',
@@ -680,7 +681,20 @@ const getJobById = async (id) => {
 };
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
-  const result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+  let result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+
+  if (!result.matches.length && filters.autoPrepare !== 'false') {
+    await prepareJobsForUser({
+      userId,
+      reason: 'matched_jobs_empty',
+      syncIfEmpty: true,
+      generateMatches: true,
+      matchLimit: filters.limit,
+    });
+
+    result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+  }
+
   const seenJobs = new Set();
   const jobs = result.matches
     .map(jobFromStoredMatch)
