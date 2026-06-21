@@ -1,6 +1,9 @@
 const logger = require('../../common/utils/logger');
 const jobsRepository = require('./jobs.repository');
 
+const SYNCED_JOB_SOURCE = 'apify_linkedin';
+const SYNCED_JOB_SOURCE_TYPE = 'linkedin';
+
 const toPositiveInt = (value, fallback) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
@@ -38,6 +41,8 @@ const hasPublishedJobsForSearch = async ({ search, location }) => {
     keyword: search,
     location,
     status: 'published',
+    source: SYNCED_JOB_SOURCE,
+    sourceType: SYNCED_JOB_SOURCE_TYPE,
     limit: 1,
   });
 
@@ -46,6 +51,8 @@ const hasPublishedJobsForSearch = async ({ search, location }) => {
   const fallbackResult = await jobsRepository.listJobs({
     keyword: search,
     status: 'published',
+    source: SYNCED_JOB_SOURCE,
+    sourceType: SYNCED_JOB_SOURCE_TYPE,
     limit: 1,
   });
 

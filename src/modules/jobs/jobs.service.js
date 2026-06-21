@@ -3,6 +3,9 @@ const AppError = require('../../common/errors/AppError');
 const jobsRepository = require('./jobs.repository');
 const { prepareJobsForUser } = require('./jobsPreparation.service');
 
+const SYNCED_JOB_SOURCE = 'apify_linkedin';
+const SYNCED_JOB_SOURCE_TYPE = 'linkedin';
+
 const KNOWN_SKILLS = [
   'HTML',
   'CSS',
@@ -588,6 +591,10 @@ const getJobSkills = (job) => {
 
 const DEFAULT_MIN_MATCH_SCORE = 50;
 
+const includeManualJobs = (value) => value === true || value === 'true';
+const isSyncedJob = (job) =>
+  job?.source === SYNCED_JOB_SOURCE || job?.source_type === SYNCED_JOB_SOURCE_TYPE;
+
 const jobFromStoredMatch = (match) => {
   const { jobs: job } = match;
   if (!job) return null;
@@ -682,8 +689,22 @@ const getJobById = async (id) => {
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
   let result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+  const buildJobs = (matches) => {
+    const seenJobs = new Set();
+    return matches
+      .map(jobFromStoredMatch)
+      .filter((job) => {
+        if (!job || seenJobs.has(job.id)) return false;
+        if (!includeManualJobs(filters.includeManual) && !isSyncedJob(job)) {
+          return false;
+        }
+        seenJobs.add(job.id);
+        return true;
+      });
+  };
+  let jobs = buildJobs(result.matches);
 
-  if (!result.matches.length && filters.autoPrepare !== 'false') {
+  if (!jobs.length && filters.autoPrepare !== 'false') {
     await prepareJobsForUser({
       userId,
       reason: 'matched_jobs_empty',
@@ -693,16 +714,8 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
     });
 
     result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+    jobs = buildJobs(result.matches);
   }
-
-  const seenJobs = new Set();
-  const jobs = result.matches
-    .map(jobFromStoredMatch)
-    .filter((job) => {
-      if (!job || seenJobs.has(job.id)) return false;
-      seenJobs.add(job.id);
-      return true;
-    });
 
   return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
 };
