@@ -56,6 +56,7 @@ app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/interviews', interviewsRoutes);
 app.use('/api/v1/interviews', interviewsRoutes);
+app.use(`${apiPrefix}/chat`,chatRouter)
 app.use(`${apiPrefix}/rag`, ragRoutes);
 app.use(`${apiPrefix}/cvs`, cvsRoutes);
 app.use(`${apiPrefix}/users`, userRoutes);
