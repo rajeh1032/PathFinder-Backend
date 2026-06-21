@@ -58,7 +58,9 @@ const normalizeExperiencePayload = (body = {}) => {
 const getMyExperiences = async (user) => {
   const userId = getAuthenticatedUserId(user);
   const profile = await getProfileForUser(userId);
-  const experiences = await profilesRepository.findExperiencesByProfileId(profile.id);
+  const experiences = await profilesRepository.findExperiencesByProfileId(
+    profile.id,
+  );
 
   return { experiences };
 };
@@ -112,7 +114,10 @@ const updateMyExperience = async ({ user, experienceId, body }) => {
     merged.end_date &&
     new Date(merged.end_date) < new Date(merged.start_date)
   ) {
-    throw new AppError('end_date must be greater than or equal to start_date', 400);
+    throw new AppError(
+      'end_date must be greater than or equal to start_date',
+      400,
+    );
   }
 
   const experience = await profilesRepository.updateExperience({
@@ -139,10 +144,69 @@ const deleteMyExperience = async ({ user, experienceId }) => {
   return { id: deleted.id };
 };
 
+const getUserEducationHistory = async (userId) => {
+  const profile = await getProfileForUser(userId);
+  return profilesRepository.findEducationByProfileId(profile.id);
+};
+
+const addEducation = async (userId, educationData) => {
+  const profile = await getProfileForUser(userId);
+  return profilesRepository.createEducation(profile.id, educationData);
+};
+
+const updateEducation = async (userId, educationId, updateData) => {
+  const education = await profilesRepository.findEducationById(educationId);
+
+  if (!education) {
+    throw new AppError('Education record not found.', 404);
+  }
+  // Business Rule: Ensure user owns this profile record
+  if (education.profile.user_id !== userId) {
+    throw new AppError(
+      'Unauthorized: You do not own this education record.',
+      403,
+    );
+  }
+
+  return profilesRepository.updateEducation(educationId, updateData);
+};
+
+const removeEducation = async (userId, educationId) => {
+  const education = await profilesRepository.findEducationById(educationId);
+
+  if (!education) {
+    throw new AppError('Education record not found.', 404);
+  }
+  // Business Rule: Ensure user owns this profile record
+  if (education.profile.user_id !== userId) {
+    throw new AppError(
+      'Unauthorized: You do not own this education record.',
+      403,
+    );
+  }
+
+  await profilesRepository.deleteEducation(educationId);
+  return { id: educationId, deleted: true };
+};
+
+const getAllTargetPaths = async ()=>{
+  const careerPahts = await profilesRepository.getAllTargetCareerPaths();
+
+  if(!careerPahts){
+    throw new AppError('Can not reterive career paths',500)
+  }
+  return careerPahts;
+}
+
 module.exports = {
   createMyExperience,
   deleteMyExperience,
   getMyExperienceById,
   getMyExperiences,
   updateMyExperience,
+  getUserEducationHistory,
+  removeEducation,
+  updateEducation,
+  addEducation,
+  getAllTargetPaths
 };

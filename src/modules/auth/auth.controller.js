@@ -27,7 +27,7 @@ const login = asyncHandler(async (req, res) => {
     return sendError(res, {}, 'Invalid email or password', 401);
   }
 
-  return sendSuccess(res, { user }, 'Login successful :)');
+  return sendSuccess(res, {user}, 'Login successful :)');
 });
 
 const getUser = asyncHandler(async (req, res) => {

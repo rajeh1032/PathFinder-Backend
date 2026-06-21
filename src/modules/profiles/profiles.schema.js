@@ -69,8 +69,51 @@ const updateExperienceSchema = Joi.object(experienceSchemaBase)
     return value;
   });
 
+
+  // Schema for adding a new education record
+const createEducationSchema = Joi.object({
+  degree: Joi.string().min(2).required().messages({
+    'string.empty': 'Degree is required',
+  }),
+  field_of_study: Joi.string().min(2).required().messages({
+    'string.empty': 'Field of study is required',
+  }),
+  institution: Joi.string().min(2).required().messages({
+    'string.empty': 'Institution/University is required',
+  }),
+  start_date: Joi.date().iso().required().messages({
+    'date.format': 'Start date must be a valid ISO date',
+  }),
+  end_date: Joi.date().iso().allow(null, ''),
+  grade: Joi.string().allow(null, ''),
+  description: Joi.string().allow(null, ''),
+});
+
+
+
+// Schema for updating an existing record (fields are optional)
+const updateEducationSchema = Joi.object({
+  degree: Joi.string().min(2),
+  field_of_study: Joi.string().min(2),
+  institution: Joi.string().min(2),
+  start_date: Joi.date().iso(),
+  end_date: Joi.date().iso().allow(null, ''),
+  grade: Joi.string().allow(null, ''),
+  description: Joi.string().allow(null, ''),
+}).min(1); // Ensure at least one field is provided for update
+
+// Schema for validating the UUID parameter
+const educationParamSchema = Joi.object({
+  id: Joi.string().guid({ version: 'uuidv4' }).required().messages({
+    'string.guid': 'Invalid education ID format',
+  }),
+});
+
 module.exports = {
   createExperienceSchema,
   experienceIdParamSchema,
   updateExperienceSchema,
+  createEducationSchema,
+  updateEducationSchema,
+  educationParamSchema,
 };

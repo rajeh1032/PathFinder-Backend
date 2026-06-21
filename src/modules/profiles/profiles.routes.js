@@ -10,11 +10,19 @@ const {
   createExperienceSchema,
   experienceIdParamSchema,
   updateExperienceSchema,
+  createEducationSchema,
+  updateEducationSchema,
 } = require('./profiles.schema');
 
 const router = express.Router();
 
-router.get('/me/experiences', authenticate, profilesController.getMyExperiences);
+router.get(
+  '/me/experiences',
+  authenticate,
+  profilesController.getMyExperiences,
+);
+
+router.get('/me/education', authenticate, profilesController.getEducation);
 
 router.post(
   '/me/experiences',
@@ -45,4 +53,19 @@ router.delete(
   profilesController.deleteMyExperience,
 );
 
+router.post(
+  '/me/education',
+  validateBody(createEducationSchema),
+  authenticate,
+  profilesController.createEducation,
+);
+
+router.patch(
+  '/me/education/:id',
+  validateBody(updateEducationSchema),
+  authenticate,
+  profilesController.updateEducation,
+);
+
+router.get('/me/careerPahts', profilesController.getAllTargetCareer);
 module.exports = router;

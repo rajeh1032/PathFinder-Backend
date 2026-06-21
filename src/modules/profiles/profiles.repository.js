@@ -1,3 +1,4 @@
+const { cli } = require('winston/lib/winston/config');
 const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 
@@ -30,6 +31,28 @@ const findProfileByUserId = async (userId) => {
   return data;
 };
 
+const findEducationById = async (id) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('profile_education')
+    .select(
+      `
+        *,
+        profile:profiles (
+          user_id
+        )
+      `,
+    )
+    .eq('id', id)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    handleSupabaseError(error, 'Failed to create profile experience');
+  }
+  return data || null;
+};
+
 const findExperiencesByProfileId = async (profileId) => {
   const client = ensureSupabase();
   const { data, error } = await client
@@ -41,6 +64,19 @@ const findExperiencesByProfileId = async (profileId) => {
 
   handleSupabaseError(error, 'Failed to fetch profile experiences');
   return data || [];
+};
+
+const findEducationByProfileId = async (profileId) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('profile_education')
+    .select('*')
+    .eq('profile_id', profileId)
+    .order('start_date', { ascending: false });
+
+  handleSupabaseError(error, 'Failed to fetch profile education');
+  return data;
 };
 
 const findExperienceByIdForProfile = async (experienceId, profileId) => {
@@ -56,6 +92,23 @@ const findExperienceByIdForProfile = async (experienceId, profileId) => {
   return data;
 };
 
+const createEducation = async (profileId, educationData) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('profile_education')
+    .insert([
+      {
+        profile_id: profileId,
+        ...educationData,
+      },
+    ])
+    .select()
+    .single();
+
+  handleSupabaseError(error, 'Failed to create profile education');
+  return data;
+};
+
 const createExperience = async (payload) => {
   const client = ensureSupabase();
   const { data, error } = await client
@@ -65,6 +118,20 @@ const createExperience = async (payload) => {
     .single();
 
   handleSupabaseError(error, 'Failed to create profile experience');
+  return data;
+};
+
+const updateEducation = async (id, updateData) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('profile_education')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  handleSupabaseError(error, 'Failed to update profile education');
   return data;
 };
 
@@ -82,6 +149,20 @@ const updateExperience = async ({ experienceId, profileId, payload }) => {
   return data;
 };
 
+const deleteEducation = async (id) => {
+  const client = ensureSupabase();
+
+  const { data, error } = await client
+    .from('profile_education')
+    .delete()
+    .eq('id', id)
+    .select()
+    .single();
+
+  handleSupabaseError(error, 'Failed to delete profile education');
+  return data;
+};
+
 const deleteExperience = async ({ experienceId, profileId }) => {
   const client = ensureSupabase();
   const { data, error } = await client
@@ -96,6 +177,15 @@ const deleteExperience = async ({ experienceId, profileId }) => {
   return data;
 };
 
+const getAllTargetCareerPaths = async () => {
+  const client = ensureSupabase();
+  const { data, error } = await client.from('career_paths').select('id,title');
+
+  handleSupabaseError(error,'Failed to get career paths');
+
+  return data;
+};
+
 module.exports = {
   createExperience,
   deleteExperience,
@@ -103,4 +193,10 @@ module.exports = {
   findExperiencesByProfileId,
   findProfileByUserId,
   updateExperience,
+  findEducationById,
+  findEducationByProfileId,
+  deleteEducation,
+  updateEducation,
+  createEducation,
+  getAllTargetCareerPaths,
 };
