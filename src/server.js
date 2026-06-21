@@ -65,7 +65,7 @@ app.use(`${apiPrefix}/courses`, coursesRoutes);
 app.use(`${apiPrefix}/jobs`, jobsRoutes);
 app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
 app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
-app.use(`{apiPrefix}/profiles`, profileRoutes);
+app.use(`${apiPrefix}/profiles`, profileRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
