@@ -1,4 +1,4 @@
-const asyncHandler = require('../../common/utils/asyncHandler');
+﻿const asyncHandler = require('../../common/utils/asyncHandler');
 const { sendSuccess } = require('../../common/utils/apiResponse');
 const usersService = require('./users.service');
 
@@ -44,11 +44,19 @@ const activateUserById = asyncHandler(async (req, res) => {
   return sendSuccess(res, { user }, 'User activated successfully');
 });
 
+
+const getUserStatsById = asyncHandler(async (req, res) => {
+  const stats = await usersService.getUserStats(req.params.id);
+
+  return sendSuccess(res, stats, 'User stats fetched successfully');
+});
 module.exports = {
   activateUserById,
+  getUserStatsById,
   deactivateUserById,
   getAllUsers,
   getMe,
   getUserById,
   updateUserById,
 };
+

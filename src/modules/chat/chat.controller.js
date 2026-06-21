@@ -3,11 +3,13 @@ const {
   fetchUserSessions,
   getUserCV,
   getSessionHistory,
+  getRagContextForFeature,
   saveMessage,
   validateSession,
   updateSessionTimestamp,
   fetchMessages,
   sendToGemini,
+  softDeleteSession,
 } = require('./chat.service');
 
 const handleError = (res, label, err) => {
@@ -19,13 +21,19 @@ const handleError = (res, label, err) => {
   });
 };
 
+const getAuthenticatedUserId = (req) => {
+  console.log('req.user:', req.user);
+  return req.user?.userId || req.user?.id;
+};
+
 // POST /api/chat/sessions
 async function createSession(req, res) {
   try {
-    const { userId, title } = req.body;
+    const userId = getAuthenticatedUserId(req);
+    const { title } = req.body;
 
     if (!userId)
-      return res.status(400).json({ error: 'userId is required' });
+      return res.status(401).json({ error: 'Authenticated user is required' });
 
     const session = await createChatSession({ userId, title });
 
@@ -38,10 +46,10 @@ async function createSession(req, res) {
 // GET /api/chat/sessions?userId=...
 async function getSessions(req, res) {
   try {
-    const { userId } = req.query;
+    const userId = getAuthenticatedUserId(req);
 
     if (!userId)
-      return res.status(400).json({ error: 'userId is required' });
+      return res.status(401).json({ error: 'Authenticated user is required' });
 
     const sessions = await fetchUserSessions(userId);
 
@@ -55,37 +63,52 @@ async function getSessions(req, res) {
 async function sendMessage(req, res) {
   try {
     const { sessionId } = req.params;
-    const { message, userId } = req.body;
- 
-    // Validation
+    const userId = getAuthenticatedUserId(req);
+    const { message } = req.body;
+
+    console.log('sendMessage start:', { sessionId, userId });
+    // 1. Validation أولاً
     if (!message?.trim())
       return res.status(400).json({ error: 'Message is required' });
     if (!userId)
-      return res.status(400).json({ error: 'userId is required' });
- 
+      return res.status(401).json({ error: 'Authenticated user is required' });
+
+    // 2. Validate session
     const isValid = await validateSession(sessionId, userId);
+    console.log('validateSession result:', isValid);
     if (!isValid)
       return res.status(404).json({ error: 'Session not found' });
- 
-    const [cv, history] = await Promise.all([
+
+    // 3. Fetch data
+    const [cv, history, ragContext] = await Promise.all([
       getUserCV(userId),
       getSessionHistory(sessionId),
+      getRagContextForFeature('chat'),
     ]);
- 
+
+    // 4. Save user message
     await saveMessage({
       sessionId,
       sender: 'user',
       message: message.trim(),
       tokens: Math.ceil(message.length / 4),
     });
- 
+
+    // 5. Send to Gemini (map 429 -> AppError for friendly message)
     const { text: aiResponse, usage } = await sendToGemini({
       cv,
       history,
       message: message.trim(),
+      ragContext,
+    }).catch((err) => {
+      if (err.status === 429 || err.statusCode === 429) {
+        const AppError = require('../../common/errors/AppError');
+        throw new AppError('AI service is busy. Please try again in a moment.', 429);
+      }
+      throw err;
     });
- 
-   
+
+    // 6. Save AI response + update session
     await Promise.all([
       saveMessage({
         sessionId,
@@ -95,15 +118,26 @@ async function sendMessage(req, res) {
       }),
       updateSessionTimestamp(sessionId),
     ]);
- 
+
+    // 7. Response في الآخر ✅
     return res.status(200).json({
-      message: aiResponse,
+      userMessage: {
+        sender: 'user',
+        message: message.trim(),
+        created_at: new Date().toISOString(),
+      },
+      assistantMessage: {
+        sender: 'assistant',
+        message: aiResponse,
+        created_at: new Date().toISOString(),
+      },
       tokens: {
         prompt: usage?.promptTokenCount ?? 0,
         response: usage?.candidatesTokenCount ?? 0,
         total: usage?.totalTokenCount ?? 0,
       },
     });
+
   } catch (err) {
     return handleError(res, 'sendMessage', err);
   }
@@ -113,10 +147,10 @@ async function sendMessage(req, res) {
 async function getMessages(req, res) {
   try {
     const { sessionId } = req.params;
-    const { userId } = req.query;
+    const userId = getAuthenticatedUserId(req);
  
     if (!userId)
-      return res.status(400).json({ error: 'userId is required' });
+      return res.status(401).json({ error: 'Authenticated user is required' });
  
     const isValid = await validateSession(sessionId, userId);
     if (!isValid)
@@ -129,10 +163,32 @@ async function getMessages(req, res) {
   }
 }
 
+// DELETE /api/chat/sessions/:sessionId
+async function deleteSession(req, res) {
+  try {
+    const { sessionId } = req.params;
+    const userId = getAuthenticatedUserId(req);
+
+    if (!userId)
+      return res.status(401).json({ error: 'Authenticated user is required' });
+
+    const isValid = await validateSession(sessionId, userId);
+    if (!isValid)
+      return res.status(404).json({ error: 'Session not found' });
+
+    await softDeleteSession(sessionId);
+
+    return res.status(200).json({ message: 'Session deleted successfully' });
+  } catch (err) {
+    return handleError(res, 'deleteSession', err);
+  }
+}
+
 module.exports = {
   createSession,
   getSessions,
   sendMessage,
   getMessages,
+  deleteSession,
 };
  

@@ -15,14 +15,17 @@ const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
 const profileRoutes = require('./modules/profiles/profiles.routes');
 const testRoutes = require('./modules/test/test.routes');
 const chatRouter = require('./modules/chat/chat.routes');
-
-
 const userRoutes = require('./modules/users/users.routes');
-
-
+const jobsRoutes = require('./modules/jobs/jobs.routes');
+const jobMatchesRoutes = require('./modules/jobMatches/jobMatches.routes');
+const coverLettersRoutes = require('./modules/coverLetters/coverLetters.routes');
+const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+const { startJobsSyncScheduler } = require('./common/schedulers/jobsSyncScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const API_VERSION = process.env.API_VERSION || 'v1';
+const apiPrefix = `/api/${API_VERSION}`;
 
 app.use(cors());
 app.use(express.json());
@@ -39,17 +42,28 @@ app.get('/', (req, res) => {
     supabase: isConfigured ? 'connected' : 'not configured',
   });
 });
+
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'pathfinder-backend',
+  });
+});
+
 app.use('/api/chat', chatRouter);
 app.use('/test', testRoutes);
 app.use('/api/interviews', interviewsRoutes);
 app.use('/api/v1/interviews', interviewsRoutes);
-app.use('/api/v1/rag', ragRoutes);
-app.use('/api/v1/cvs', cvsRoutes);
-app.use('/api/v1/users', userRoutes);
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/roadmaps', roadmapRoutes);
-app.use('/api/v1/courses', coursesRoutes);
-app.use('/api/v1/profiles', profileRoutes);
+app.use(`${apiPrefix}/rag`, ragRoutes);
+app.use(`${apiPrefix}/cvs`, cvsRoutes);
+app.use(`${apiPrefix}/users`, userRoutes);
+app.use(`${apiPrefix}/auth`, authRoutes);
+app.use(`${apiPrefix}/roadmaps`, roadmapRoutes);
+app.use(`${apiPrefix}/courses`, coursesRoutes);
+app.use(`${apiPrefix}/jobs`, jobsRoutes);
+app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
+app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
+app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
   res.sendFile(
@@ -57,8 +71,28 @@ app.get('/openapi/rag.json', (req, res) => {
   );
 });
 
-app.use(errorHandler);
+app.get('/openapi/roadmaps.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-roadmaps.openapi.json'),
+  );
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+app.get('/openapi/courses.json', (req, res) => {
+  res.sendFile(
+    path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
+  );
 });
+
+app.use(errorHandler);
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    startJobsSyncScheduler();
+  });
+}
+
+module.exports = app;
+

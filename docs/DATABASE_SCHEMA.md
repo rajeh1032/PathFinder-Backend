@@ -308,7 +308,7 @@ Learning content catalog. For MVP, a course has one `video_url`.
 | `is_free` | `boolean` | Default `true` |
 | `rating` | `numeric(3,2)` | 0 to 5 |
 | `reviews_count` | `integer` | Default `0` |
-| `enrollment_count` | `integer` | Default `0` |
+| `enrollment_count` | `integer` | Default `0`; provider/catalog popularity metadata, not the local PathFinder enrollment total |
 | `popularity_score` | `integer` | Default `0` |
 | `is_active` | `boolean` | Default `true` |
 | `created_by` | `uuid` | FK to `users.id` |
@@ -348,9 +348,13 @@ Recommendations and roadmap course lookups only use courses where `is_active = t
 
 Implemented course API flow:
 
+- `GET /api/v1/courses`: authenticated, database-paginated discovery with allowlisted filters/sorts and user saved/enrollment state.
+- `GET /api/v1/courses/:id`: authenticated active/approved details with skills and user state.
+- `GET /api/v1/courses/saved` plus `POST/DELETE /api/v1/courses/:id/save`: authenticated ownership-scoped, idempotent saved-course management.
+- `GET /api/v1/courses/enrollments`, `POST /api/v1/courses/:id/enroll`, and `PATCH /api/v1/courses/:id/enrollment`: authenticated ownership-scoped enrollment management.
 - `POST /api/v1/courses/import/preview`: admin-only; detects MaharaTech provider/external id, checks duplicates, fetches public metadata, uses `getRagContextForFeature('course_analysis')`, runs AI metadata extraction, and returns matched/unmatched skill previews.
-- `POST /api/v1/courses/import/confirm`: admin-only; saves the approved course and selected `course_skills` mappings. AI does not decide visibility; it only extracts metadata.
-- `GET /api/v1/courses/recommended`: authenticated users; dynamically scores approved active courses against CV missing skills, active roadmap steps, target career skills, and known user skills.
+- `POST /api/v1/courses/import/confirm`: admin-only; independently revalidates the allowlisted MaharaTech URL and matching provider/external id before saving the approved course and selected `course_skills` mappings. AI does not decide visibility; it only extracts metadata.
+- `GET /api/v1/courses/recommended`: authenticated users; deterministically scores only relevant approved active course-skill rows against CV missing skills, active roadmap steps, target career skills, and known user skills.
 
 ### `saved_courses`
 
@@ -382,6 +386,8 @@ Course enrollment and progress tracking.
 | `updated_at` | `timestamptz` | Default `now()` |
 
 Unique key: `user_id`, `course_id`.
+
+Completion constraint: `completed` requires `progress = 100` and a non-null `completed_at`; every other status requires `progress < 100` and `completed_at is null`. Local enrollment counts are derived from this table and do not mutate `courses.enrollment_count`.
 
 ### `cvs`
 
@@ -615,6 +621,9 @@ Questions and answers inside an interview session.
 | `interview_session_id` | `uuid` | FK to `interview_sessions.id` |
 | `question` | `text` | Required |
 | `question_order` | `integer` | Order inside the session |
+| `options` | `jsonb` | MCQ option list |
+| `correct_option_index` | `integer` | Internal answer key, never expose in active responses |
+| `question_format` | `text` | MCQ-only for interviews |
 | `user_answer` | `text` | Nullable |
 | `is_skipped` | `boolean` | Default `false` |
 | `answer_type` | `text` | `text`, `voice` |
@@ -626,6 +635,21 @@ Questions and answers inside an interview session.
 | `generated_by_type` | `generated_by_type` | Usually `ai` |
 
 Unique constraint: `interview_session_id`, `question_order`.
+
+### `interview_question_sets`
+
+Cached/generated MCQ interview question sets used to avoid regenerating the same interview prompt repeatedly.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `career_path_id` | `uuid` | Nullable FK to `career_paths.id` |
+| `interview_type` | `text` | `behavioral`, `technical`, `mock_hr` |
+| `request_text` | `text` | Normalized generation request |
+| `embedding` | `vector(1536)` | Request embedding |
+| `questions` | `jsonb` | Cached MCQ question payload |
+| `metadata` | `jsonb` | Generation metadata |
+| `created_at` | `timestamptz` | Default `now()` |
 
 ### `cover_letters`
 
@@ -886,6 +910,7 @@ Admin and system audit trail.
 | `api_sources` | `api_sync_runs` | One-to-many |
 | `users` | `notification_settings` | One-to-one |
 | `users` | `activity_logs` | One-to-many admin actions |
+| `career_paths` | `interview_question_sets` | One-to-many |
 
 ## Module Ownership Checklist
 
@@ -906,7 +931,7 @@ Use this checklist before creating any module. A module is correct only if it to
 | `appliedJobs` | `applied_jobs` | `jobs` |
 | `jobMatches` | `job_matches` | `jobs`, `cvs`, `cv_analyses`, `skills`, `user_skills` |
 | `roadmaps` | `roadmaps`, `roadmap_steps` | `career_paths`, `skills`, `courses` |
-| `interviews` | `interview_sessions`, `interview_questions` | `jobs`, `career_paths`, `ai_logs` |
+| `interviews` | `interview_sessions`, `interview_questions`, `interview_question_sets` | `jobs`, `career_paths`, `ai_logs` |
 | `coverLetters` | `cover_letters`, `cover_letter_insights`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
 | `chat` | `chat_sessions`, `chat_messages` | `rag_documents`, `rag_chunks`, `ai_logs` |
 | `notifications` | `notification_settings` | `users` |

@@ -1,0 +1,495 @@
+{
+  "openapi": "3.1.0",
+<<<<<<< Updated upstream
+  "info": { "title": "PathFinder Roadmaps API", "version": "1.0.0" },
+  "servers": [{ "url": "/api/v1" }],
+=======
+  "info": {
+    "title": "PathFinder Roadmaps API",
+    "version": "1.0.0",
+    "description": "Authenticated roadmap generation, retrieval, and progress API. Public JSON uses camelCase; database naming remains internal."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "tags": [{ "name": "Roadmaps" }],
+>>>>>>> Stashed changes
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/roadmaps/me": {
+      "get": {
+<<<<<<< Updated upstream
+        "summary": "Get the authenticated user's active roadmap state",
+        "responses": { "200": { "description": "Roadmap state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapStateEnvelope" } } } }, "401": { "$ref": "#/components/responses/Error" } }
+=======
+        "tags": ["Roadmaps"],
+        "summary": "Get the authenticated user's current roadmap state",
+        "responses": {
+          "200": {
+            "description": "Roadmap state returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/NoRoadmapResponse" },
+                    { "$ref": "#/components/schemas/MyRoadmapResponse" }
+                  ]
+                },
+                "examples": {
+                  "uploadCv": {
+                    "value": {
+                      "success": true,
+                      "message": "Roadmap fetched successfully",
+                      "data": { "hasRoadmap": false, "requiredAction": "upload_cv" }
+                    }
+                  },
+                  "generateRoadmap": {
+                    "value": {
+                      "success": true,
+                      "message": "Roadmap fetched successfully",
+                      "data": { "hasRoadmap": false, "requiredAction": "generate_roadmap" }
+                    }
+                  },
+                  "hasRoadmap": { "$ref": "#/components/examples/MyRoadmapEnvelope" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+>>>>>>> Stashed changes
+      }
+    },
+    "/roadmaps/generate": {
+      "post": {
+<<<<<<< Updated upstream
+        "summary": "Reuse or generate a personalized roadmap",
+        "description": "Every success returns hasRoadmap, requiredAction, reused, and roadmap. A reused roadmap returns 200; a new roadmap returns 201; upload_cv returns 200.",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "forceRegenerate": { "type": "boolean", "default": false } } } } } },
+        "responses": {
+          "200": { "description": "Reused roadmap or required action", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenerateEnvelope" } } } },
+          "201": { "description": "Newly generated roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenerateEnvelope" } } } },
+          "400": { "$ref": "#/components/responses/Error" }, "401": { "$ref": "#/components/responses/Error" }
+=======
+        "tags": ["Roadmaps"],
+        "summary": "Generate or reuse a roadmap",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GenerateRoadmapRequest" },
+              "example": { "forceRegenerate": false }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An active roadmap was reused, or CV upload is required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/RoadmapResponse" },
+                    { "$ref": "#/components/schemas/GenerateRequiredActionResponse" }
+                  ]
+                },
+                "examples": {
+                  "reused": { "$ref": "#/components/examples/RoadmapEnvelope" },
+                  "uploadCv": {
+                    "value": {
+                      "success": true,
+                      "message": "Analyze your CV first to generate a personalized roadmap.",
+                      "data": { "hasRoadmap": false, "requiredAction": "upload_cv" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Roadmap created atomically",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RoadmapResponse" },
+                "examples": { "created": { "$ref": "#/components/examples/RoadmapEnvelope" } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+>>>>>>> Stashed changes
+        }
+      }
+    },
+    "/roadmaps/{id}": {
+      "get": {
+<<<<<<< Updated upstream
+        "summary": "Get an owned roadmap",
+        "parameters": [{ "$ref": "#/components/parameters/RoadmapId" }],
+        "responses": { "200": { "description": "Roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapEnvelope" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+=======
+        "tags": ["Roadmaps"],
+        "summary": "Get one roadmap owned by the authenticated user",
+        "parameters": [{ "$ref": "#/components/parameters/RoadmapId" }],
+        "responses": {
+          "200": {
+            "description": "Roadmap returned",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RoadmapResponse" },
+                "examples": { "roadmap": { "$ref": "#/components/examples/RoadmapEnvelope" } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+>>>>>>> Stashed changes
+      }
+    },
+    "/roadmaps/{roadmapId}/steps/{stepId}/progress": {
+      "patch": {
+<<<<<<< Updated upstream
+        "summary": "Update progress for an owned roadmap step",
+        "parameters": [{ "$ref": "#/components/parameters/RoadmapIdNamed" }, { "$ref": "#/components/parameters/StepId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StepProgressUpdate" } } } },
+        "responses": { "200": { "description": "Updated roadmap", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RoadmapEnvelope" } } } }, "400": { "$ref": "#/components/responses/Error" }, "404": { "$ref": "#/components/responses/Error" } }
+=======
+        "tags": ["Roadmaps"],
+        "summary": "Update one step and return the complete updated roadmap",
+        "description": "isCompleted is optional. When omitted it is derived from progress. When supplied it must be true exactly when progress is 100.",
+        "parameters": [
+          { "$ref": "#/components/parameters/RoadmapIdNamed" },
+          { "$ref": "#/components/parameters/StepId" }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateStepProgressRequest" },
+              "example": { "progress": 100, "isCompleted": true }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Step and aggregate roadmap progress updated atomically",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/RoadmapResponse" },
+                "examples": { "updated": { "$ref": "#/components/examples/RoadmapEnvelope" } }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+>>>>>>> Stashed changes
+      }
+    }
+  },
+  "components": {
+<<<<<<< Updated upstream
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+    "parameters": {
+      "RoadmapId": { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "RoadmapIdNamed": { "name": "roadmapId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "StepId": { "name": "stepId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+    },
+    "schemas": {
+      "CourseSummary": { "type": "object", "required": ["id", "title", "provider"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "provider": { "type": "string" }, "url": { "type": ["string", "null"], "format": "uri" }, "thumbnailUrl": { "type": ["string", "null"], "format": "uri" }, "videoUrl": { "type": ["string", "null"], "format": "uri" }, "duration": { "type": ["string", "null"] }, "level": { "type": ["string", "null"] } } },
+      "RoadmapStep": { "type": "object", "required": ["id", "title", "description", "status", "progress", "isCompleted", "duration", "level", "isAiRecommended", "recommendedCourses"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "description": { "type": "string" }, "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] }, "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "isCompleted": { "type": "boolean" }, "completedAt": { "type": ["string", "null"], "format": "date-time" }, "duration": { "type": "string" }, "level": { "type": "string" }, "isAiRecommended": { "type": "boolean" }, "recommendedCourses": { "type": "array", "items": { "$ref": "#/components/schemas/CourseSummary" } } } },
+      "RoadmapSection": { "type": "object", "required": ["title", "status", "subtitle", "items"], "properties": { "title": { "type": "string" }, "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] }, "subtitle": { "type": "string" }, "items": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapStep" } } } },
+      "Roadmap": { "type": "object", "required": ["id", "title", "description", "label", "estimatedDuration", "progress", "sections", "insights"], "properties": { "id": { "type": "string", "format": "uuid" }, "title": { "type": "string" }, "description": { "type": "string" }, "label": { "type": "string" }, "estimatedDuration": { "type": "string" }, "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "nextStep": { "type": ["string", "null"] }, "sections": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapSection" } }, "insights": { "type": "object", "required": ["projectedSalaryIncrease", "matchingSeniorRoles"], "properties": { "projectedSalaryIncrease": { "type": "integer" }, "matchingSeniorRoles": { "type": "integer" } } } } },
+      "StepProgressUpdate": { "type": "object", "required": ["progress"], "properties": { "progress": { "type": "integer", "minimum": 0, "maximum": 100 }, "isCompleted": { "type": "boolean", "description": "When supplied, must equal progress == 100." } } },
+      "RoadmapEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["roadmap"], "properties": { "roadmap": { "$ref": "#/components/schemas/Roadmap" } } } } },
+      "RoadmapStateEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["hasRoadmap", "requiredAction"], "properties": { "hasRoadmap": { "type": "boolean" }, "requiredAction": { "type": ["string", "null"], "enum": ["upload_cv", "generate_roadmap", null] }, "roadmap": { "oneOf": [{ "$ref": "#/components/schemas/Roadmap" }, { "type": "null" }] } } } } },
+      "GenerateEnvelope": { "type": "object", "required": ["success", "message", "data"], "properties": { "success": { "const": true }, "message": { "type": "string" }, "data": { "type": "object", "required": ["hasRoadmap", "requiredAction", "reused", "roadmap"], "properties": { "hasRoadmap": { "type": "boolean" }, "requiredAction": { "type": ["string", "null"], "enum": ["upload_cv", "generate_roadmap", null] }, "reused": { "type": "boolean" }, "roadmap": { "oneOf": [{ "$ref": "#/components/schemas/Roadmap" }, { "type": "null" }] } } } } },
+      "Error": { "type": "object", "required": ["success", "message", "error"], "properties": { "success": { "const": false }, "message": { "type": "string" }, "error": { "type": "object", "required": ["code", "details"], "properties": { "code": { "type": "string" }, "details": { "type": "array", "items": {} } } } } }
+    },
+    "responses": { "Error": { "description": "Stable error envelope", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+=======
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "parameters": {
+      "RoadmapId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "RoadmapIdNamed": {
+        "name": "roadmapId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      },
+      "StepId": {
+        "name": "stepId",
+        "in": "path",
+        "required": true,
+        "schema": { "type": "string", "format": "uuid" }
+      }
+    },
+    "schemas": {
+      "GenerateRoadmapRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": { "forceRegenerate": { "type": "boolean", "default": false } }
+      },
+      "UpdateStepProgressRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["progress"],
+        "properties": {
+          "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "isCompleted": { "type": "boolean" }
+        }
+      },
+      "Course": {
+        "type": "object",
+        "required": ["id", "title", "provider"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "provider": { "type": "string" },
+          "url": { "type": ["string", "null"], "format": "uri" },
+          "thumbnailUrl": { "type": ["string", "null"] },
+          "videoUrl": { "type": ["string", "null"] },
+          "duration": { "type": ["string", "null"] },
+          "level": { "type": ["string", "null"] }
+        }
+      },
+      "RoadmapStep": {
+        "type": "object",
+        "required": ["id", "title", "description", "status", "progress", "isCompleted", "completedAt", "duration", "level", "isAiRecommended", "recommendedCourses"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] },
+          "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "isCompleted": { "type": "boolean" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" },
+          "duration": { "type": "string", "example": "2 weeks" },
+          "level": { "type": "string", "example": "beginner" },
+          "isAiRecommended": { "type": "boolean" },
+          "recommendedCourses": { "type": "array", "items": { "$ref": "#/components/schemas/Course" } }
+        }
+      },
+      "RoadmapSection": {
+        "type": "object",
+        "required": ["title", "status", "subtitle", "items"],
+        "properties": {
+          "title": { "type": "string" },
+          "status": { "type": "string", "enum": ["completed", "in_progress", "upcoming"] },
+          "subtitle": { "type": "string" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapStep" } }
+        }
+      },
+      "Roadmap": {
+        "type": "object",
+        "required": ["id", "title", "description", "label", "estimatedDuration", "progress", "nextStep", "sections", "insights"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "description": { "type": ["string", "null"] },
+          "label": { "type": "string" },
+          "estimatedDuration": { "type": "string" },
+          "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+          "nextStep": { "type": ["string", "null"] },
+          "sections": { "type": "array", "items": { "$ref": "#/components/schemas/RoadmapSection" } },
+          "insights": {
+            "type": "object",
+            "properties": {
+              "projectedSalaryIncrease": { "type": "integer" },
+              "matchingSeniorRoles": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "RoadmapResponse": {
+        "type": "object",
+        "required": ["success", "message", "data"],
+        "properties": {
+          "success": { "const": true },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": ["roadmap"],
+            "properties": { "roadmap": { "$ref": "#/components/schemas/Roadmap" } }
+          }
+        }
+      },
+      "NoRoadmapResponse": {
+        "type": "object",
+        "required": ["success", "message", "data"],
+        "properties": {
+          "success": { "const": true },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": ["hasRoadmap", "requiredAction"],
+            "properties": {
+              "hasRoadmap": { "const": false },
+              "requiredAction": { "type": "string", "enum": ["upload_cv", "generate_roadmap"] }
+            }
+          }
+        }
+      },
+      "MyRoadmapResponse": {
+        "type": "object",
+        "required": ["success", "message", "data"],
+        "properties": {
+          "success": { "const": true },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": ["hasRoadmap", "requiredAction", "roadmap"],
+            "properties": {
+              "hasRoadmap": { "const": true },
+              "requiredAction": { "type": "null" },
+              "roadmap": { "$ref": "#/components/schemas/Roadmap" }
+            }
+          }
+        }
+      },
+      "GenerateRequiredActionResponse": {
+        "type": "object",
+        "required": ["success", "message", "data"],
+        "properties": {
+          "success": { "const": true },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": ["hasRoadmap", "requiredAction"],
+            "properties": {
+              "hasRoadmap": { "const": false },
+              "requiredAction": { "const": "upload_cv" }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["success", "statusCode", "message"],
+        "properties": {
+          "success": { "const": false },
+          "statusCode": { "type": "integer" },
+          "message": { "type": "string" },
+          "details": { "type": ["object", "array", "null"] }
+        }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Invalid body or UUID parameter",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": {
+              "success": false,
+              "statusCode": 400,
+              "message": "Validation failed",
+              "details": { "details": [{ "message": "progress must be less than or equal to 100", "path": "progress" }] }
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Missing or invalid JWT",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "success": false, "statusCode": 401, "message": "Authentication token missing" }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Roadmap or step not found, including resources owned by another user",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+            "example": { "success": false, "statusCode": 404, "message": "Roadmap not found" }
+          }
+        }
+      }
+    },
+    "examples": {
+      "RoadmapEnvelope": {
+        "value": {
+          "success": true,
+          "message": "Roadmap fetched successfully",
+          "data": {
+            "roadmap": {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "title": "Roadmap to Backend Developer",
+              "description": "A focused path based on your CV and target career.",
+              "label": "Professional Path",
+              "estimatedDuration": "4 months",
+              "progress": 40,
+              "nextStep": "Build REST APIs with Express",
+              "sections": [
+                {
+                  "title": "Backend Foundations",
+                  "status": "in_progress",
+                  "subtitle": "In Progress - Currently Learning",
+                  "items": [
+                    {
+                      "id": "22222222-2222-4222-8222-222222222222",
+                      "title": "Build REST APIs with Express",
+                      "description": "Practice routing, validation, and service boundaries.",
+                      "status": "in_progress",
+                      "progress": 40,
+                      "isCompleted": false,
+                      "completedAt": null,
+                      "duration": "2 weeks",
+                      "level": "beginner",
+                      "isAiRecommended": true,
+                      "recommendedCourses": [
+                        {
+                          "id": "33333333-3333-4333-8333-333333333333",
+                          "title": "Node.js Essentials",
+                          "provider": "MaharaTech",
+                          "url": "https://example.com/course",
+                          "thumbnailUrl": null,
+                          "videoUrl": null,
+                          "duration": "10 hours",
+                          "level": "beginner"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "insights": { "projectedSalaryIncrease": 24, "matchingSeniorRoles": 120 }
+            }
+          }
+        }
+      },
+      "MyRoadmapEnvelope": {
+        "value": {
+          "success": true,
+          "message": "Roadmap fetched successfully",
+          "data": {
+            "hasRoadmap": true,
+            "requiredAction": null,
+            "roadmap": {
+              "id": "11111111-1111-4111-8111-111111111111",
+              "title": "Roadmap to Backend Developer",
+              "description": "A focused path based on your CV and target career.",
+              "label": "Professional Path",
+              "estimatedDuration": "4 months",
+              "progress": 0,
+              "nextStep": "Build REST APIs with Express",
+              "sections": [],
+              "insights": { "projectedSalaryIncrease": 24, "matchingSeniorRoles": 120 }
+            }
+          }
+        }
+      }
+    }
+>>>>>>> Stashed changes
+  }
+}

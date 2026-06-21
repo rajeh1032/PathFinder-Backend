@@ -3,12 +3,17 @@
   "info": {
     "title": "PathFinder Chat API",
     "version": "1.0.0",
-    "description": "Import this file into Apidog to test PathFinder chat sessions and messages."
+    "description": "Import this file into Apidog to test authenticated PathFinder chat sessions and messages."
   },
   "servers": [
     {
       "url": "http://localhost:5000",
       "description": "Local development server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
     }
   ],
   "tags": [
@@ -24,14 +29,13 @@
         "summary": "Create chat session",
         "operationId": "createChatSession",
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/CreateChatSessionRequest"
               },
               "example": {
-                "userId": "10000000-0000-0000-0000-000000000001",
                 "title": "Career chat"
               }
             }
@@ -44,22 +48,12 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ChatSessionResponse"
-                },
-                "example": {
-                  "session": {
-                    "id": "20000000-0000-0000-0000-000000000001",
-                    "user_id": "10000000-0000-0000-0000-000000000001",
-                    "title": "Career chat",
-                    "status": "active",
-                    "created_at": "2026-06-16T10:00:00.000Z",
-                    "updated_at": "2026-06-16T10:00:00.000Z"
-                  }
                 }
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -70,18 +64,6 @@
         "tags": ["Chat"],
         "summary": "List chat sessions",
         "operationId": "listChatSessions",
-        "parameters": [
-          {
-            "name": "userId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "example": "10000000-0000-0000-0000-000000000001"
-          }
-        ],
         "responses": {
           "200": {
             "description": "Chat sessions fetched successfully",
@@ -93,8 +75,8 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "500": {
             "$ref": "#/components/responses/InternalServerError"
@@ -120,7 +102,6 @@
                 "$ref": "#/components/schemas/SendChatMessageRequest"
               },
               "example": {
-                "userId": "10000000-0000-0000-0000-000000000001",
                 "message": "How can I improve my CV for a backend developer role?"
               }
             }
@@ -140,6 +121,9 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
           "404": {
             "$ref": "#/components/responses/NotFound"
           },
@@ -157,16 +141,6 @@
         "parameters": [
           {
             "$ref": "#/components/parameters/SessionId"
-          },
-          {
-            "name": "userId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "example": "10000000-0000-0000-0000-000000000001"
           }
         ],
         "responses": {
@@ -180,8 +154,8 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
@@ -194,6 +168,13 @@
     }
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
     "parameters": {
       "SessionId": {
         "name": "sessionId",
@@ -209,12 +190,7 @@
     "schemas": {
       "CreateChatSessionRequest": {
         "type": "object",
-        "required": ["userId"],
         "properties": {
-          "userId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "title": {
             "type": "string",
             "example": "Career chat"
@@ -223,12 +199,8 @@
       },
       "SendChatMessageRequest": {
         "type": "object",
-        "required": ["userId", "message"],
+        "required": ["message"],
         "properties": {
-          "userId": {
-            "type": "string",
-            "format": "uuid"
-          },
           "message": {
             "type": "string",
             "minLength": 1,
@@ -359,7 +331,20 @@
               "$ref": "#/components/schemas/ErrorResponse"
             },
             "example": {
-              "error": "userId is required"
+              "error": "Message is required"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication token missing or invalid",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            },
+            "example": {
+              "error": "Authentication token missing"
             }
           }
         }

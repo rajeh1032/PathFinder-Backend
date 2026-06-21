@@ -6,28 +6,35 @@ const {
   createUser,
   loginUser,
   getMe,
+  getCurrentUser,
   changePassword,
 } = require('./auth.service.js');
 
 const register = asyncHandler(async (req, res) => {
-  const user = await createUser(req.body);
-  if (!user) {
+  const authData = await createUser(req.body);
+  if (!authData) {
     logger.error('User registration failed', { body: req.body });
     return sendError(res, {}, 'User registration failed', 500);
   }
 
-  logger.info('User registered successfully', { userId: user.id });
-  return sendSuccess(res, { user }, 'User registered successfully');
+  logger.info('User registered successfully', { userId: authData.user.id });
+  return sendSuccess(res, authData, 'User registered successfully');
 });
 
 const login = asyncHandler(async (req, res) => {
-  const user = await loginUser(req.body.email, req.body.password);
-  if (!user) {
+  const authData = await loginUser(req.body.email, req.body.password);
+  if (!authData) {
     logger.error('Login failed', { body: req.body });
     return sendError(res, {}, 'Invalid email or password', 401);
   }
 
-  return sendSuccess(res, {user}, 'Login successful :)');
+  return sendSuccess(res, authData, 'Login successful :)');
+});
+
+const me = asyncHandler(async (req, res) => {
+  const userId = req.user?.id || req.user?.userId;
+  const currentUser = await getCurrentUser(userId);
+  return sendSuccess(res, currentUser, 'Authenticated user fetched successfully');
 });
 
 const getUser = asyncHandler(async (req, res) => {
@@ -56,6 +63,7 @@ const changeUserPassword = asyncHandler(async (req, res) => {
 module.exports = {
   register,
   login,
+  me,
   getUser,
   changeUserPassword,
 };

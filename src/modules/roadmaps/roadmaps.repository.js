@@ -1,4 +1,5 @@
 const AppError = require('../../common/errors/AppError');
+const logger = require('../../common/utils/logger');
 const { supabase, isConfigured } = require('../../config/supabase');
 
 const ensureSupabase = () => {
@@ -11,6 +12,15 @@ const ensureSupabase = () => {
 
 const handleSupabaseError = (error, message, statusCode = 500) => {
   if (error) {
+    logger.error(
+      {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      },
+      'Roadmaps Supabase operation failed',
+    );
     throw new AppError(message, statusCode, {
       code: error.code,
       hint: error.hint,
@@ -212,7 +222,28 @@ const findRoadmapSteps = async (roadmapId) => {
   const client = ensureSupabase();
   const { data, error } = await client
     .from('roadmap_steps')
-    .select('*, skills(id, name, category, level, aliases)')
+    .select(
+      `
+        *,
+        skills(id, name, category, level, aliases),
+        roadmap_step_courses(
+          recommendation_order,
+          source,
+          courses(
+            id,
+            title,
+            provider,
+            url,
+            thumbnail_url,
+            video_url,
+            duration,
+            level,
+            is_active,
+            analysis_status
+          )
+        )
+      `,
+    )
     .eq('roadmap_id', roadmapId)
     .order('step_order', { ascending: true });
 
@@ -220,68 +251,58 @@ const findRoadmapSteps = async (roadmapId) => {
   return data || [];
 };
 
-const pauseActiveRoadmapsForUser = async (userId) => {
+const createRoadmapAtomic = async ({
+  userId,
+  careerPathId,
+  title,
+  description,
+  metadata,
+  generatedByType,
+  steps,
+  forceRegenerate,
+}) => {
   const client = ensureSupabase();
-  const { error } = await client
-    .from('roadmaps')
-    .update({ status: 'paused' })
-    .eq('user_id', userId)
-    .eq('status', 'active');
+  const { data, error } = await client.rpc('create_roadmap_atomic', {
+    p_user_id: userId,
+    p_career_path_id: careerPathId,
+    p_title: title,
+    p_description: description,
+    p_metadata: metadata,
+    p_generated_by_type: generatedByType,
+    p_steps: steps,
+    p_force_regenerate: forceRegenerate,
+  });
 
-  handleSupabaseError(error, 'Failed to pause existing roadmaps');
-};
-
-const createRoadmap = async (payload) => {
-  const client = ensureSupabase();
-  const { data, error } = await client
-    .from('roadmaps')
-    .insert(payload)
-    .select('*')
-    .single();
-
-  handleSupabaseError(error, 'Failed to create roadmap');
+  handleSupabaseError(error, 'Failed to create roadmap atomically');
   return data;
 };
 
-const createRoadmapSteps = async (steps) => {
-  if (!steps.length) {
-    return [];
-  }
-
+const updateRoadmapStepProgressAtomic = async ({
+  userId,
+  roadmapId,
+  stepId,
+  progress,
+  isCompleted,
+}) => {
   const client = ensureSupabase();
-  const { data, error } = await client
-    .from('roadmap_steps')
-    .insert(steps)
-    .select('*');
+  const { data, error } = await client.rpc(
+    'update_roadmap_step_progress_atomic',
+    {
+      p_user_id: userId,
+      p_roadmap_id: roadmapId,
+      p_step_id: stepId,
+      p_progress: progress,
+      p_is_completed: isCompleted,
+    },
+  );
 
-  handleSupabaseError(error, 'Failed to create roadmap steps');
-  return data || [];
-};
-
-const updateRoadmapStep = async ({ roadmapId, stepId, payload }) => {
-  const client = ensureSupabase();
-  const { data, error } = await client
-    .from('roadmap_steps')
-    .update(payload)
-    .eq('id', stepId)
-    .eq('roadmap_id', roadmapId)
-    .select('*')
-    .maybeSingle();
-
-  handleSupabaseError(error, 'Failed to update roadmap step');
-  return data;
-};
-
-const updateRoadmap = async (roadmapId, payload) => {
-  const client = ensureSupabase();
-  const { data, error } = await client
-    .from('roadmaps')
-    .update(payload)
-    .eq('id', roadmapId)
-    .select('*')
-    .single();
-
-  handleSupabaseError(error, 'Failed to update roadmap');
+  handleSupabaseError(
+    error,
+    error?.code === 'P0002'
+      ? error.message
+      : 'Failed to update roadmap progress atomically',
+    error?.code === 'P0002' ? 404 : 500,
+  );
   return data;
 };
 
@@ -295,9 +316,6 @@ module.exports = {
   findLatestActiveRoadmapForUser,
   findRoadmapByIdForUser,
   findRoadmapSteps,
-  pauseActiveRoadmapsForUser,
-  createRoadmap,
-  createRoadmapSteps,
-  updateRoadmapStep,
-  updateRoadmap,
+  createRoadmapAtomic,
+  updateRoadmapStepProgressAtomic,
 };

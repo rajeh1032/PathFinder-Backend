@@ -2,6 +2,26 @@ const Joi = require('joi');
 
 const optionalString = (max) => Joi.string().trim().max(max).allow(null, '');
 const optionalUri = () => Joi.string().trim().uri().allow(null, '');
+const uuidParamSchema = Joi.object({
+  id: Joi.string().uuid().required(),
+});
+const paginationSchema = {
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(50).default(20),
+};
+
+const coursesQuerySchema = Joi.object({
+  ...paginationSchema,
+  q: Joi.string().trim().min(1).max(120).pattern(/^[^,()]+$/),
+  category: Joi.string().trim().min(1).max(120),
+  level: Joi.string().trim().min(1).max(80),
+  provider: Joi.string().trim().min(1).max(120),
+  language: Joi.string().trim().min(1).max(80),
+  isFree: Joi.boolean(),
+  sort: Joi.string().valid('newest', 'rating', 'popular').default('newest'),
+});
+
+const paginatedCoursesQuerySchema = Joi.object(paginationSchema);
 
 const manualMetadataSchema = Joi.object({
   title: Joi.string().trim().min(2).max(255),
@@ -51,8 +71,8 @@ const analysisSchema = Joi.object({
 }).unknown(false);
 
 const confirmCourseImportSchema = Joi.object({
-  provider: Joi.string().trim().min(2).max(120).required(),
-  external_id: Joi.string().trim().max(120).allow(null),
+  provider: Joi.string().valid('MaharaTech').required(),
+  external_id: Joi.string().trim().min(1).max(120).required(),
   url: Joi.string().trim().uri().required(),
   metadata: manualMetadataSchema.required(),
   analysis: analysisSchema.required(),
@@ -65,7 +85,26 @@ const recommendedCoursesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(10),
 });
 
+const updateEnrollmentSchema = Joi.object({
+  progress: Joi.number().integer().min(0).max(100),
+  status: Joi.string().valid('active', 'paused', 'completed', 'cancelled'),
+})
+  .or('progress', 'status')
+  .custom((value, helpers) => {
+    if (value.status === 'completed' && value.progress !== undefined && value.progress !== 100) {
+      return helpers.message({ 'any.custom': 'completed status requires progress 100' });
+    }
+    if (value.status && value.status !== 'completed' && value.progress === 100) {
+      return helpers.message({ 'any.custom': 'progress 100 requires completed status' });
+    }
+    return value;
+  });
+
 module.exports = {
+  uuidParamSchema,
+  coursesQuerySchema,
+  paginatedCoursesQuerySchema,
+  updateEnrollmentSchema,
   previewCourseImportSchema,
   confirmCourseImportSchema,
   recommendedCoursesQuerySchema,
