@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const {
   authenticate,
   authorize,
@@ -10,6 +10,12 @@ const router = express.Router();
 router.get('/me', authenticate, usersController.getMe);
 router.get('/', authenticate, usersController.getAllUsers);
 router.get('/:id', authenticate, usersController.getUserById);
+router.get(
+  '/:id/stats',
+  authenticate,
+  authorize('admin'),
+  usersController.getUserStatsById,
+);
 router.patch(
   '/:id/activate',
   authenticate,
@@ -30,3 +36,4 @@ router.patch(
 );
 
 module.exports = router;
+

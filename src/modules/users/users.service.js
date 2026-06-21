@@ -1,4 +1,4 @@
-const AppError = require('../../common/errors/AppError');
+﻿const AppError = require('../../common/errors/AppError');
 const { buildPaginationMeta } = require('../../common/utils/pagination');
 const usersRepository = require('./users.repository');
 
@@ -170,11 +170,27 @@ const activateUserById = async (userId) => {
   return user;
 };
 
+
+const getUserStats = async (userId) => {
+  if (!userId) {
+    throw new AppError('User id is required', 400);
+  }
+
+  const user = await usersRepository.findUserById(userId);
+
+  if (!user) {
+    throw new AppError('User not found', 404);
+  }
+
+  return usersRepository.getUserStats(userId);
+};
 module.exports = {
   activateUserById,
+  getUserStats,
   deactivateUserById,
   getAllUsers,
   getCurrentUser,
   getUserById,
   updateUserById,
 };
+

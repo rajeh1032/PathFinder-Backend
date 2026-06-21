@@ -1,4 +1,4 @@
-const AppError = require('../../common/errors/AppError');
+﻿const AppError = require('../../common/errors/AppError');
 const { supabase, isConfigured } = require('../../config/supabase');
 
 const ensureSupabase = () => {
@@ -197,9 +197,107 @@ const findAllUsers = async ({
   };
 };
 
+
+const countForUser = async (client, table, userId, column = 'user_id') => {
+  const { count, error } = await client
+    .from(table)
+    .select('id', { count: 'exact', head: true })
+    .eq(column, userId);
+
+  if (error) {
+    throw new AppError(`Failed to count ${table}: ${error.message}`, 500);
+  }
+
+  return count || 0;
+};
+
+const getUserStats = async (userId) => {
+  const client = ensureSupabase();
+
+  const { data: cvRows, error: cvError } = await client
+    .from('cvs')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (cvError) {
+    throw new AppError(`Failed to read cvs: ${cvError.message}`, 500);
+  }
+
+  const cvIds = (cvRows || []).map((row) => row.id);
+
+  let cvAnalysesCount = 0;
+
+  if (cvIds.length > 0) {
+    const { count, error } = await client
+      .from('cv_analyses')
+      .select('id', { count: 'exact', head: true })
+      .in('cv_id', cvIds);
+
+    if (error) {
+      throw new AppError(`Failed to count cv_analyses: ${error.message}`, 500);
+    }
+
+    cvAnalysesCount = count || 0;
+  }
+
+  const { data: aiRows, error: aiError } = await client
+    .from('ai_logs')
+    .select('tokens_used, cost')
+    .eq('user_id', userId);
+
+  if (aiError) {
+    throw new AppError(`Failed to read ai_logs: ${aiError.message}`, 500);
+  }
+
+  const aiUsage = (aiRows || []).reduce(
+    (totals, row) => {
+      totals.tokensUsed += Number(row.tokens_used) || 0;
+      totals.cost += Number(row.cost) || 0;
+      totals.calls += 1;
+      return totals;
+    },
+    { tokensUsed: 0, cost: 0, calls: 0 },
+  );
+
+  const [
+    skills,
+    roadmaps,
+    jobMatches,
+    interviews,
+    coverLetters,
+    chatSessions,
+  ] = await Promise.all([
+    countForUser(client, 'user_skills', userId),
+    countForUser(client, 'roadmaps', userId),
+    countForUser(client, 'job_matches', userId),
+    countForUser(client, 'interview_sessions', userId),
+    countForUser(client, 'cover_letters', userId),
+    countForUser(client, 'chat_sessions', userId),
+  ]);
+
+  return {
+    counts: {
+      skills,
+      cvs: cvIds.length,
+      cvAnalyses: cvAnalysesCount,
+      roadmaps,
+      jobMatches,
+      interviews,
+      coverLetters,
+      chatSessions,
+    },
+    aiUsage: {
+      tokensUsed: aiUsage.tokensUsed,
+      cost: Number(aiUsage.cost.toFixed(2)),
+      calls: aiUsage.calls,
+    },
+  };
+};
 module.exports = {
   findAllUsers,
+  getUserStats,
   findRoleIdByName,
   findUserById,
   updateUserById,
 };
+

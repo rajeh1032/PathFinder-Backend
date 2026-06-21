@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
@@ -18,6 +18,7 @@ const userRoutes = require('./modules/users/users.routes');
 const jobsRoutes = require('./modules/jobs/jobs.routes');
 const jobMatchesRoutes = require('./modules/jobMatches/jobMatches.routes');
 const coverLettersRoutes = require('./modules/coverLetters/coverLetters.routes');
+const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
 const { startJobsSyncScheduler } = require('./common/schedulers/jobsSyncScheduler');
 
 const app = express();
@@ -61,6 +62,7 @@ app.use(`${apiPrefix}/courses`, coursesRoutes);
 app.use(`${apiPrefix}/jobs`, jobsRoutes);
 app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
 app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
+app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
   res.sendFile(
@@ -90,3 +92,4 @@ if (require.main === module) {
 }
 
 module.exports = app;
+
