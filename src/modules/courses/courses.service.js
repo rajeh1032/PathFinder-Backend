@@ -75,6 +75,19 @@ const uniqueStrings = (values) => {
   return output;
 };
 
+const cleanCourseTitle = (value) => {
+  let title = String(value || '').trim();
+  if (!title) {
+    return title;
+  }
+
+  // Strip noisy provider suffix/prefix, e.g. "Course: Javascript* | Mahara-Tech".
+  title = title.replace(/\s*[|\u2013\u2014-]\s*mahara[\s-]?tech\s*$/i, '');
+  title = title.replace(/^\s*course\s*:\s*/i, '');
+  title = title.replace(/\*+\s*$/g, '').trim();
+  return title;
+};
+
 const detectCourseProvider = (rawUrl) => {
   let parsedUrl;
 
@@ -275,7 +288,7 @@ const fetchPublicCourseMetadata = async (url) => {
 
     return {
       metadata: {
-        title: title || undefined,
+        title: cleanCourseTitle(title) || undefined,
         description: description || undefined,
         category: category || undefined,
         thumbnail_url: thumbnail_url || undefined,
@@ -319,11 +332,7 @@ const mergeMetadata = ({ providerInfo, fetchedMetadata, manualMetadata }) => {
   };
 };
 
-const hasEnoughMetadataForAnalysis = (metadata) =>
-  Boolean(
-    metadata.title &&
-    (metadata.description || safeArray(metadata.learning_outcomes).length > 0),
-  );
+const hasEnoughMetadataForAnalysis = (metadata) => Boolean(metadata.title);
 
 const toSkillCatalogForPrompt = (skills) =>
   skills.map((skill) => ({
@@ -1109,9 +1118,58 @@ const updateEnrollment = async ({ user, courseId, payload }) => {
   return { courseId, enrollment: mapEnrollment(enrollment) };
 };
 
+const ALLOWED_COURSE_UPDATE_FIELDS = [
+  'title',
+  'description',
+  'category',
+  'level',
+  'duration',
+  'language',
+  'video_url',
+  'thumbnail_url',
+  'learning_outcomes',
+  'is_active',
+  'is_free',
+];
+
+const updateCourse = async ({ user, courseId, payload }) => {
+  const userId = getAuthenticatedUserId(user);
+  const existing = await coursesRepository.findCourseById(courseId);
+  if (!existing) {
+    throw new AppError('Course not found', 404, null, 'COURSE_NOT_FOUND');
+  }
+
+  const changes = {};
+  ALLOWED_COURSE_UPDATE_FIELDS.forEach((field) => {
+    if (payload[field] !== undefined) {
+      changes[field] = payload[field];
+    }
+  });
+
+  if (Object.keys(changes).length === 0) {
+    throw new AppError('No valid fields provided to update', 400, null, 'VALIDATION_ERROR');
+  }
+
+  changes.updated_by = userId;
+  const updated = await coursesRepository.updateCourse({ courseId, changes });
+  return { course: mapCourse(updated) };
+};
+
+const deleteCourse = async ({ courseId }) => {
+  const existing = await coursesRepository.findCourseById(courseId);
+  if (!existing) {
+    throw new AppError('Course not found', 404, null, 'COURSE_NOT_FOUND');
+  }
+
+  await coursesRepository.deleteCourse(courseId);
+  return { courseId };
+};
+
 module.exports = {
   getCourses,
   getCourseById,
+  updateCourse,
+  deleteCourse,
   getSavedCourses,
   saveCourse,
   unsaveCourse,

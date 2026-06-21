@@ -1,0 +1,401 @@
+﻿{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "PathFinder CVs API",
+    "version": "1.0.0",
+    "description": "Import this file into ApiDog/Swagger to test the PathFinder CV endpoints. Includes admin read endpoints (list and detail of CV analyses) and the user-scoped CV analyze/status endpoints."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:5000",
+      "description": "Local development server"
+    }
+  ],
+  "tags": [
+    {
+      "name": "CV Analyses (Admin)",
+      "description": "Admin-only read access to every user's CV analysis. Requires a JWT whose role is 'admin'."
+    },
+    {
+      "name": "CVs (User)",
+      "description": "User-scoped CV upload, analysis, and status."
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/cvs": {
+      "get": {
+        "tags": ["CV Analyses (Admin)"],
+        "summary": "List CV analyses (admin)",
+        "description": "Returns a paginated list of CV analyses across all users, joining cv_analyses -> cvs -> users. Requires authenticate + authorize('admin').",
+        "operationId": "listCvAnalyses",
+        "parameters": [
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/StatusFilter" }
+        ],
+        "responses": {
+          "200": {
+            "description": "CV analyses fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvAnalysisListSuccessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "403": { "$ref": "#/components/responses/ForbiddenError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/v1/cvs/{id}": {
+      "get": {
+        "tags": ["CV Analyses (Admin)"],
+        "summary": "Get CV analysis by id (admin)",
+        "description": "Returns a single CV analysis with embedded CV and user metadata. Requires authenticate + authorize('admin').",
+        "operationId": "getCvAnalysisById",
+        "parameters": [
+          { "$ref": "#/components/parameters/CvAnalysisId" }
+        ],
+        "responses": {
+          "200": {
+            "description": "CV analysis fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvAnalysisDetailSuccessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "403": { "$ref": "#/components/responses/ForbiddenError" },
+          "404": { "$ref": "#/components/responses/NotFoundError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/v1/cvs/analyze": {
+      "post": {
+        "tags": ["CVs (User)"],
+        "summary": "Upload and analyze a CV",
+        "description": "Uploads a PDF CV (field name 'file', max 10MB), parses it, and runs the AI analysis for the authenticated user.",
+        "operationId": "analyzeCv",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "PDF CV file (max 10MB)."
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "CV analyzed successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvAnalyzeSuccessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "413": { "$ref": "#/components/responses/PayloadTooLargeError" },
+          "415": { "$ref": "#/components/responses/UnsupportedMediaTypeError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/v1/cvs/me/latest-analysis": {
+      "get": {
+        "tags": ["CVs (User)"],
+        "summary": "Get my latest completed CV analysis",
+        "description": "Returns the authenticated user's latest completed CV analysis, or a flag indicating an upload is required.",
+        "operationId": "getMyLatestCvAnalysis",
+        "responses": {
+          "200": {
+            "description": "Latest CV analysis fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LatestAnalysisSuccessResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/v1/cvs/me/status": {
+      "get": {
+        "tags": ["CVs (User)"],
+        "summary": "Get my CV status",
+        "description": "Returns the authenticated user's latest CV upload/analysis status.",
+        "operationId": "getMyCvStatus",
+        "responses": {
+          "200": {
+            "description": "CV status fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvStatusSuccessResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "parameters": {
+      "Page": {
+        "name": "page",
+        "in": "query",
+        "required": false,
+        "description": "1-based page number.",
+        "schema": { "type": "integer", "minimum": 1, "default": 1 },
+        "example": 1
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "description": "Items per page (1-100).",
+        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 },
+        "example": 20
+      },
+      "StatusFilter": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Filter by analysis status.",
+        "schema": { "$ref": "#/components/schemas/CvAnalysisStatus" },
+        "example": "completed"
+      },
+      "CvAnalysisId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "CV analysis UUID.",
+        "schema": { "type": "string", "format": "uuid" },
+        "example": "3f1a2b6c-9d4e-4f8a-9c2b-7e1d5a6b3c8f"
+      }
+    },
+    "schemas": {
+      "CvAnalysisStatus": {
+        "type": "string",
+        "enum": ["completed", "failed", "reviewed"],
+        "description": "cv_analyses.status (analysis_status enum)."
+      },
+      "DetectedSkill": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "example": "React" },
+          "category": { "type": "string", "nullable": true, "example": "frontend" },
+          "level": { "type": "string", "nullable": true, "example": "advanced" },
+          "confidence": { "type": "number", "nullable": true, "example": 0.92 },
+          "evidence": { "type": "string", "nullable": true },
+          "skill_id": { "type": "string", "format": "uuid", "nullable": true }
+        }
+      },
+      "CvMeta": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "nullable": true },
+          "original_name": { "type": "string", "nullable": true, "example": "ahmed_cv.pdf" },
+          "mime_type": { "type": "string", "nullable": true, "example": "application/pdf" },
+          "size_bytes": { "type": "integer", "nullable": true, "example": 184320 },
+          "status": { "type": "string", "nullable": true, "example": "completed" },
+          "created_at": { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "CvUser": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid", "nullable": true },
+          "name": { "type": "string", "nullable": true, "example": "Ahmed Hassan" },
+          "email": { "type": "string", "nullable": true, "example": "ahmed@example.com" }
+        }
+      },
+      "CvAnalysis": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "cv_id": { "type": "string", "format": "uuid" },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100, "example": 86 },
+          "model": { "type": "string", "nullable": true, "example": "gemini-2.0-flash" },
+          "summary": { "type": "string", "nullable": true },
+          "strengths": { "type": "array", "items": { "type": "string" } },
+          "weaknesses": { "type": "array", "items": { "type": "string" } },
+          "suggestions": { "type": "array", "items": { "type": "string" } },
+          "detected_skills": { "type": "array", "items": { "$ref": "#/components/schemas/DetectedSkill" } },
+          "extracted": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Structured AI-extracted data. May include missing_skills, recommended_roles, interview_focus, job_keywords."
+          },
+          "generated_by_type": { "type": "string", "nullable": true, "example": "ai" },
+          "status": { "$ref": "#/components/schemas/CvAnalysisStatus" },
+          "reviewed_by_admin_id": { "type": "string", "format": "uuid", "nullable": true },
+          "reviewed_at": { "type": "string", "format": "date-time", "nullable": true },
+          "created_at": { "type": "string", "format": "date-time" },
+          "cv": { "$ref": "#/components/schemas/CvMeta" },
+          "user": { "$ref": "#/components/schemas/CvUser" }
+        }
+      },
+      "Pagination": {
+        "type": "object",
+        "properties": {
+          "page": { "type": "integer", "example": 1 },
+          "limit": { "type": "integer", "example": 20 },
+          "totalItems": { "type": "integer", "example": 42 },
+          "totalPages": { "type": "integer", "example": 3 },
+          "hasNextPage": { "type": "boolean", "example": true },
+          "hasPreviousPage": { "type": "boolean", "example": false },
+          "nextPage": { "type": "integer", "nullable": true, "example": 2 },
+          "previousPage": { "type": "integer", "nullable": true, "example": null }
+        }
+      },
+      "CvAnalysisListSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV analyses fetched successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "analyses": { "type": "array", "items": { "$ref": "#/components/schemas/CvAnalysis" } }
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "pagination": { "$ref": "#/components/schemas/Pagination" }
+            }
+          }
+        }
+      },
+      "CvAnalysisDetailSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV analysis fetched successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "analysis": { "$ref": "#/components/schemas/CvAnalysis" }
+            }
+          }
+        }
+      },
+      "CvAnalyzeSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV analyzed successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "cv": { "$ref": "#/components/schemas/CvMeta" },
+              "analysis": { "$ref": "#/components/schemas/CvAnalysis" }
+            }
+          }
+        }
+      },
+      "LatestAnalysisSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "Latest CV analysis fetched successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "hasAnalysis": { "type": "boolean", "example": true },
+              "requiredAction": { "type": "string", "nullable": true, "example": null },
+              "cv": { "$ref": "#/components/schemas/CvMeta" },
+              "analysis": { "$ref": "#/components/schemas/CvAnalysis" }
+            }
+          }
+        }
+      },
+      "CvStatusSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV status fetched successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "hasCv": { "type": "boolean", "example": true },
+              "hasCompletedAnalysis": { "type": "boolean", "example": true },
+              "latestCvStatus": { "type": "string", "nullable": true, "example": "completed" },
+              "requiredAction": { "type": "string", "nullable": true, "example": null }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "statusCode": { "type": "integer", "example": 400 },
+          "message": { "type": "string", "example": "Validation failed" },
+          "details": { "type": "object", "additionalProperties": true, "nullable": true }
+        }
+      }
+    },
+    "responses": {
+      "ValidationError": {
+        "description": "Validation failed",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "UnauthorizedError": {
+        "description": "Authentication token missing or invalid",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "ForbiddenError": {
+        "description": "Authenticated user is not an admin",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "NotFoundError": {
+        "description": "Resource not found",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "PayloadTooLargeError": {
+        "description": "CV file exceeds the 10MB limit",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "UnsupportedMediaTypeError": {
+        "description": "Only PDF CV files are allowed",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      },
+      "InternalServerError": {
+        "description": "Unexpected server error",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } }
+      }
+    }
+  }
+}

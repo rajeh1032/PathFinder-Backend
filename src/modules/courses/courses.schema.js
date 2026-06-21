@@ -100,8 +100,23 @@ const updateEnrollmentSchema = Joi.object({
     return value;
   });
 
+const updateCourseSchema = Joi.object({
+  title: Joi.string().trim().min(2).max(255),
+  description: Joi.string().trim().min(10).max(10000).allow(null, ''),
+  category: optionalString(120),
+  level: optionalString(80),
+  duration: optionalString(120),
+  language: Joi.string().trim().max(80).allow(null, ''),
+  video_url: optionalUri(),
+  thumbnail_url: optionalUri(),
+  learning_outcomes: Joi.array().items(Joi.string().trim().min(2).max(300)).max(20),
+  is_active: Joi.boolean(),
+  is_free: Joi.boolean(),
+}).min(1);
+
 module.exports = {
   uuidParamSchema,
+  updateCourseSchema,
   coursesQuerySchema,
   paginatedCoursesQuerySchema,
   updateEnrollmentSchema,
