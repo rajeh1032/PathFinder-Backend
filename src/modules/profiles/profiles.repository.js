@@ -19,6 +19,43 @@ const handleSupabaseError = (error, message, statusCode = 500) => {
   }
 };
 
+const AVATAR_BUCKET = 'profile-images';
+
+const uploadAvatarFile = async ({ storagePath, buffer, contentType }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client.storage
+    .from(AVATAR_BUCKET)
+    .upload(storagePath, buffer, {
+      contentType,
+      upsert: true,
+    });
+
+  handleSupabaseError(error, 'Failed to upload profile image');
+  return data;
+};
+
+const getAvatarPublicUrl = (storagePath) => {
+  const client = ensureSupabase();
+  const { data } = client.storage
+    .from(AVATAR_BUCKET)
+    .getPublicUrl(storagePath);
+
+  return data?.publicUrl || null;
+};
+
+const deleteAvatarFile = async (storagePath) => {
+  if (!storagePath) {
+    return;
+  }
+
+  const client = ensureSupabase();
+  const { error } = await client.storage
+    .from(AVATAR_BUCKET)
+    .remove([storagePath]);
+
+  handleSupabaseError(error, 'Failed to delete profile image');
+};
+
 const findProfileByUserId = async (userId) => {
   const client = ensureSupabase();
   const { data, error } = await client
@@ -222,6 +259,9 @@ module.exports = {
   findProfileByUserId,
   findProfileWithUserByUserId,
   updateProfile,
+  uploadAvatarFile,
+  getAvatarPublicUrl,
+  deleteAvatarFile,
   updateExperience,
   findEducationById,
   findEducationByProfileId,

@@ -109,7 +109,10 @@ const educationParamSchema = Joi.object({
   }),
 });
 
-// Schema for updating the core profile record (all fields optional)
+// Schema for updating the core profile record (all fields optional).
+// `.min(1)` is intentionally omitted because the request may contain only an
+// uploaded image (multipart file) with no text fields; the service guards
+// against a truly empty update (no fields and no file).
 const updateProfileSchema = Joi.object({
   headline: optionalString(200),
   bio: optionalString(3000),
@@ -121,7 +124,7 @@ const updateProfileSchema = Joi.object({
   current_status_id: Joi.string().uuid().allow(null),
   experience_year_id: Joi.string().uuid().allow(null),
   target_career_id: Joi.string().uuid().allow(null),
-}).min(1);
+});
 
 module.exports = {
   createExperienceSchema,

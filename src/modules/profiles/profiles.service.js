@@ -1,5 +1,23 @@
+const crypto = require('crypto');
+const path = require('path');
+
 const AppError = require('../../common/errors/AppError');
+const logger = require('../../common/utils/logger');
 const profilesRepository = require('./profiles.repository');
+
+const AVATAR_MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+const ALLOWED_AVATAR_MIME_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+];
+const AVATAR_EXTENSION_BY_MIME = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
 
 const getAuthenticatedUserId = (user) => {
   const userId = user?.id || user?.userId;
@@ -9,6 +27,28 @@ const getAuthenticatedUserId = (user) => {
   }
 
   return userId;
+};
+
+const assertValidAvatarFile = (file) => {
+  if (!ALLOWED_AVATAR_MIME_TYPES.includes(file.mimetype)) {
+    throw new AppError(
+      'Only JPG, PNG, WEBP, or GIF images are allowed',
+      415,
+    );
+  }
+
+  if (file.size > AVATAR_MAX_FILE_SIZE) {
+    throw new AppError('Profile image must be 5MB or smaller', 413);
+  }
+};
+
+const buildAvatarStoragePath = ({ userId, file }) => {
+  const extension =
+    AVATAR_EXTENSION_BY_MIME[file.mimetype] ||
+    (path.extname(file.originalname || '').replace('.', '').toLowerCase() ||
+      'jpg');
+
+  return `${userId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
 };
 
 const getProfileForUser = async (userId) => {
@@ -35,15 +75,76 @@ const getMyProfile = async (user) => {
   return { profile: { ...profileFields, name: users?.name ?? null } };
 };
 
-const updateMyProfile = async ({ user, body }) => {
+const updateMyProfile = async ({ user, body = {}, file = null }) => {
   const userId = getAuthenticatedUserId(user);
-  // Ensure the profile exists before attempting an update.
-  await getProfileForUser(userId);
+  // Ensure the profile exists (and capture the current avatar for cleanup).
+  const existingProfile = await getProfileForUser(userId);
 
-  const profile = await profilesRepository.updateProfile(userId, body);
+  const payload = { ...body };
+
+  // Guard against no-op updates.
+  if (Object.keys(payload).length === 0 && !file) {
+    throw new AppError('No profile fields provided to update', 400);
+  }
+
+  let uploadedStoragePath = null;
+
+  if (file) {
+    assertValidAvatarFile(file);
+
+    const storagePath = buildAvatarStoragePath({ userId, file });
+
+    await profilesRepository.uploadAvatarFile({
+      storagePath,
+      buffer: file.buffer,
+      contentType: file.mimetype,
+    });
+
+    uploadedStoragePath = storagePath;
+    payload.avatar_url = profilesRepository.getAvatarPublicUrl(storagePath);
+    payload.avatar_storage_path = storagePath;
+  }
+
+  let profile;
+
+  try {
+    profile = await profilesRepository.updateProfile(userId, payload);
+  } catch (error) {
+    // Roll back the freshly uploaded image if the DB update fails.
+    if (uploadedStoragePath) {
+      try {
+        await profilesRepository.deleteAvatarFile(uploadedStoragePath);
+      } catch (cleanupError) {
+        logger.warn('Failed to clean up uploaded profile image', {
+          storagePath: uploadedStoragePath,
+          reason: cleanupError.message,
+        });
+      }
+    }
+
+    throw error;
+  }
 
   if (!profile) {
     throw new AppError('Profile not found', 404);
+  }
+
+  // Best-effort removal of the previous avatar after a successful replacement.
+  if (
+    uploadedStoragePath &&
+    existingProfile.avatar_storage_path &&
+    existingProfile.avatar_storage_path !== uploadedStoragePath
+  ) {
+    try {
+      await profilesRepository.deleteAvatarFile(
+        existingProfile.avatar_storage_path,
+      );
+    } catch (cleanupError) {
+      logger.warn('Failed to delete previous profile image', {
+        storagePath: existingProfile.avatar_storage_path,
+        reason: cleanupError.message,
+      });
+    }
   }
 
   return { profile };
@@ -244,6 +345,8 @@ const getAllTargetPaths = async ()=>{
 }
 
 module.exports = {
+  AVATAR_MAX_FILE_SIZE,
+  ALLOWED_AVATAR_MIME_TYPES,
   createMyExperience,
   deleteMyExperience,
   getMyExperienceById,
