@@ -31,6 +31,34 @@ const findProfileByUserId = async (userId) => {
   return data;
 };
 
+const findProfileWithUserByUserId = async (userId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*, users(name)')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch profile');
+  return data;
+};
+
+const updateProfile = async (userId, payload) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('profiles')
+    .update({
+      ...payload,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .select('*')
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to update profile');
+  return data;
+};
+
 const findEducationById = async (id) => {
   const client = ensureSupabase();
 
@@ -192,6 +220,8 @@ module.exports = {
   findExperienceByIdForProfile,
   findExperiencesByProfileId,
   findProfileByUserId,
+  findProfileWithUserByUserId,
+  updateProfile,
   updateExperience,
   findEducationById,
   findEducationByProfileId,

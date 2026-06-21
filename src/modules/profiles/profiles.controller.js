@@ -2,6 +2,21 @@ const { sendSuccess } = require('../../common/utils/apiResponse');
 const asyncHandler = require('../../common/utils/asyncHandler');
 const profilesService = require('./profiles.service');
 
+const getMyProfile = asyncHandler(async (req, res) => {
+  const result = await profilesService.getMyProfile(req.user);
+
+  return sendSuccess(res, result, 'Profile fetched successfully');
+});
+
+const updateMyProfile = asyncHandler(async (req, res) => {
+  const result = await profilesService.updateMyProfile({
+    user: req.user,
+    body: req.body,
+  });
+
+  return sendSuccess(res, result, 'Profile updated successfully');
+});
+
 const getMyExperiences = asyncHandler(async (req, res) => {
   const result = await profilesService.getMyExperiences(req.user);
 
@@ -62,6 +77,16 @@ const getEducation = asyncHandler(async (req, res) => {
   );
 });
 
+const getEducationById = asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const education = await profilesService.getEducationById(
+    userId,
+    req.params.id,
+  );
+
+  return sendSuccess(res, education, 'Profile education fetched successfully');
+});
+
 const createEducation = asyncHandler(async (req, res) => {
   const userId = req.user.userId;
   const newEducation = await profilesService.addEducation(userId, req.body);
@@ -88,6 +113,13 @@ const updateEducation = asyncHandler(async (req, res) => {
   return sendSuccess(res, result, 'Profile Education updated successfully');
 });
 
+const deleteEducation = asyncHandler(async (req, res) => {
+  const userId = req.user.userId;
+  const result = await profilesService.removeEducation(userId, req.params.id);
+
+  return sendSuccess(res, result, 'Profile education deleted successfully');
+});
+
 const getAllTargetCareer = asyncHandler(async (req, res) => {
   const careerPaths = await profilesService.getAllTargetPaths();
   return sendSuccess(
@@ -99,13 +131,17 @@ const getAllTargetCareer = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+  getMyProfile,
+  updateMyProfile,
   createMyExperience,
   deleteMyExperience,
   getMyExperienceById,
   getMyExperiences,
   updateMyExperience,
   getEducation,
+  getEducationById,
   createEducation,
   getAllTargetCareer,
   updateEducation,
+  deleteEducation,
 };

@@ -21,6 +21,34 @@ const getProfileForUser = async (userId) => {
   return profile;
 };
 
+const getMyProfile = async (user) => {
+  const userId = getAuthenticatedUserId(user);
+  const profile = await profilesRepository.findProfileWithUserByUserId(userId);
+
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
+  }
+
+  // Flatten the embedded user record so the response exposes a top-level `name`.
+  const { users, ...profileFields } = profile;
+
+  return { profile: { ...profileFields, name: users?.name ?? null } };
+};
+
+const updateMyProfile = async ({ user, body }) => {
+  const userId = getAuthenticatedUserId(user);
+  // Ensure the profile exists before attempting an update.
+  await getProfileForUser(userId);
+
+  const profile = await profilesRepository.updateProfile(userId, body);
+
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
+  }
+
+  return { profile };
+};
+
 const normalizeDate = (value) => {
   if (value === null) {
     return null;
@@ -149,6 +177,23 @@ const getUserEducationHistory = async (userId) => {
   return profilesRepository.findEducationByProfileId(profile.id);
 };
 
+const getEducationById = async (userId, educationId) => {
+  const education = await profilesRepository.findEducationById(educationId);
+
+  if (!education) {
+    throw new AppError('Education record not found.', 404);
+  }
+  // Business Rule: Ensure user owns this profile record
+  if (education.profile?.user_id !== userId) {
+    throw new AppError(
+      'Unauthorized: You do not own this education record.',
+      403,
+    );
+  }
+
+  return education;
+};
+
 const addEducation = async (userId, educationData) => {
   const profile = await getProfileForUser(userId);
   return profilesRepository.createEducation(profile.id, educationData);
@@ -204,7 +249,10 @@ module.exports = {
   getMyExperienceById,
   getMyExperiences,
   updateMyExperience,
+  getMyProfile,
+  updateMyProfile,
   getUserEducationHistory,
+  getEducationById,
   removeEducation,
   updateEducation,
   addEducation,

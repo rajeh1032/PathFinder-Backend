@@ -9,12 +9,17 @@ const {
 } = require('../ai/prompts/jobMatching.prompt');
 const AppError = require('../../common/errors/AppError');
 
-const MATCH_SELECT = 'id,user_id,job_id,cv_id,match_percentage,matched_skills,missing_skills,ai_reason,generated_by_type,status,created_at,jobs(id,title,company,location,required_skills,employment_type,salary_range,level,category,company_logo_url,apply_url)';
+const MATCH_SELECT = 'id,user_id,job_id,cv_id,match_percentage,matched_skills,missing_skills,ai_reason,generated_by_type,status,created_at,jobs(id,title,company,location,source,source_type,required_skills,employment_type,salary_range,level,category,company_logo_url,apply_url)';
 const DEFAULT_MIN_MATCH_SCORE = 50;
+const SYNCED_JOB_SOURCE = 'apify_linkedin';
+const SYNCED_JOB_SOURCE_TYPE = 'linkedin';
 
 const asArray = (value) => Array.isArray(value) ? value : [];
 const clampScore = (value) => Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
 const cleanSkillList = (items) => [...new Set(asArray(items).map((item) => String(item || '').trim()).filter(Boolean))];
+const includeManualJobs = (value) => value === true || value === 'true';
+const isSyncedJob = (job) =>
+  job?.source === SYNCED_JOB_SOURCE || job?.source_type === SYNCED_JOB_SOURCE_TYPE;
 const mapWithConcurrency = async (items, concurrency, mapper) => {
   const results = [];
   let nextIndex = 0;
@@ -96,7 +101,16 @@ const saveMatch = async (userId, job, match) => {
   return data;
 };
 
-const generateMatches = async (userId, { jobId, limit, concurrency } = {}) => {
+const generateMatches = async (userId, {
+  jobId,
+  limit,
+  concurrency,
+  keyword,
+  location,
+  category,
+  level,
+  includeManual,
+} = {}) => {
   const [skills, profile] = await Promise.all([
     jobsRepository.listUserSkills(userId),
     jobsRepository.getUserProfile(userId),
@@ -106,7 +120,18 @@ const generateMatches = async (userId, { jobId, limit, concurrency } = {}) => {
   const safeConcurrency = Math.min(5, Math.max(1, Number(concurrency) || 2));
   const jobs = jobId
     ? [await jobsRepository.findJobById(jobId)]
-    : (await jobsRepository.listJobs({ limit: safeLimit, status: 'published' })).jobs;
+    : (await jobsRepository.listJobs({
+      limit: safeLimit,
+      status: 'published',
+      keyword,
+      location,
+      category,
+      level,
+      ...(!includeManualJobs(includeManual) && {
+        source: SYNCED_JOB_SOURCE,
+        sourceType: SYNCED_JOB_SOURCE_TYPE,
+      }),
+    })).jobs;
 
   const matches = await mapWithConcurrency(jobs.filter(Boolean), safeConcurrency, async (job) => {
     const match = await createMatch(userId, job, skills, profile, ragContext);
@@ -141,6 +166,7 @@ const listMatches = async (userId, query = {}) => {
   const seenJobs = new Set();
   const matches = (data || []).filter((match) => {
     if (!match.job_id || seenJobs.has(match.job_id)) return false;
+    if (!includeManualJobs(query.includeManual) && !isSyncedJob(match.jobs)) return false;
     seenJobs.add(match.job_id);
     return true;
   });

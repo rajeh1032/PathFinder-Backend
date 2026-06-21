@@ -21,6 +21,9 @@ const applyFilters = (query, filters = {}) => {
   if (filters.location) next = next.ilike('location', `%${filters.location}%`);
   if (filters.category) next = next.ilike('category', `%${filters.category}%`);
   if (filters.level) next = next.ilike('level', `%${filters.level}%`);
+  if (filters.source) next = next.eq('source', filters.source);
+  if (filters.sourceType) next = next.eq('source_type', filters.sourceType);
+  if (filters.source_type) next = next.eq('source_type', filters.source_type);
   if (filters.remote === true || filters.remote === 'true') {
     next = next.or('location.ilike.%remote%,employment_type.ilike.%remote%');
   }

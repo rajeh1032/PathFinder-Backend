@@ -8,6 +8,9 @@ const listJobsQuerySchema = Joi.object({
   location: Joi.string().trim().max(120),
   category: Joi.string().trim().max(80),
   level: Joi.string().trim().max(80),
+  source: Joi.string().trim().max(80),
+  sourceType: Joi.string().trim().max(80),
+  source_type: Joi.string().trim().max(80),
   status: Joi.string().valid('draft', 'published', 'archived'),
   remote: Joi.boolean().truthy('true').falsy('false'),
   page: Joi.number().integer().min(1).default(1),
@@ -15,6 +18,7 @@ const listJobsQuerySchema = Joi.object({
   minScore: Joi.number().integer().min(0).max(100).default(50),
   includeWeak: Joi.boolean().truthy('true').falsy('false').default(false),
   includeFallback: Joi.boolean().truthy('true').falsy('false').default(false),
+  includeManual: Joi.boolean().truthy('true').falsy('false').default(false),
 });
 
 const syncJobsSchema = Joi.object({

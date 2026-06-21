@@ -109,6 +109,20 @@ const educationParamSchema = Joi.object({
   }),
 });
 
+// Schema for updating the core profile record (all fields optional)
+const updateProfileSchema = Joi.object({
+  headline: optionalString(200),
+  bio: optionalString(3000),
+  location: optionalString(160),
+  university: optionalString(200),
+  major: optionalString(200),
+  avatar_url: Joi.string().trim().uri().max(500).allow(null, ''),
+  education_level_id: Joi.string().uuid().allow(null),
+  current_status_id: Joi.string().uuid().allow(null),
+  experience_year_id: Joi.string().uuid().allow(null),
+  target_career_id: Joi.string().uuid().allow(null),
+}).min(1);
+
 module.exports = {
   createExperienceSchema,
   experienceIdParamSchema,
@@ -116,4 +130,5 @@ module.exports = {
   createEducationSchema,
   updateEducationSchema,
   educationParamSchema,
+  updateProfileSchema,
 };
