@@ -88,21 +88,21 @@ const createUser = async (userData) => {
     client,
     'experience_year',
     'experience_level',
-    userData.experienceYear,
+    userData.experienceYear.replace(/\s+/g, ''),
     'experience year',
   );
   const currentStatusId = await getLookupId(
     client,
     'current_status',
     'current_status',
-    userData.currentStatus,
+    userData.currentStatus.toLowerCase(),
     'current status',
   );
   const careerPathId = await getLookupId(
     client,
     'career_paths',
     'title',
-    userData.targetCareer,
+    userData.targetCareer.trim(),
     'Target Path',
   );
 
@@ -212,7 +212,8 @@ const loginUser = async (email, password) => {
     '7d',
   );
 
-  return { user: sanitizeUser(updatedUser), accessToken, refreshToken };
+  // TODO: Return user data and tokens
+  return {accessToken, refreshToken };
 };
 
 const getMe = async (userId) => {

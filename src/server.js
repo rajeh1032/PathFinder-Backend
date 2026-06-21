@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
@@ -12,6 +12,7 @@ const interviewsRoutes = require('./modules/interviews/interviews.routes');
 const ragRoutes = require('./modules/rag/rag.routes');
 const authRoutes = require('./modules/auth/auth.routes');
 const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
+const profileRoutes = require('./modules/profiles/profiles.routes');
 const testRoutes = require('./modules/test/test.routes');
 const chatRouter = require('./modules/chat/chat.routes');
 const userRoutes = require('./modules/users/users.routes');
@@ -76,6 +77,8 @@ app.get('/openapi/roadmaps.json', (req, res) => {
   );
 });
 
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 app.get('/openapi/courses.json', (req, res) => {
   res.sendFile(
     path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
