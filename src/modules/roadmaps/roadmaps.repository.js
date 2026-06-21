@@ -1,4 +1,5 @@
 const AppError = require('../../common/errors/AppError');
+const logger = require('../../common/utils/logger');
 const { supabase, isConfigured } = require('../../config/supabase');
 
 const ensureSupabase = () => {
@@ -11,6 +12,15 @@ const ensureSupabase = () => {
 
 const handleSupabaseError = (error, message, statusCode = 500) => {
   if (error) {
+    logger.error(
+      {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+      },
+      'Roadmaps Supabase operation failed',
+    );
     throw new AppError(message, statusCode, {
       code: error.code,
       hint: error.hint,
