@@ -20,7 +20,9 @@ const jobsRoutes = require('./modules/jobs/jobs.routes');
 const jobMatchesRoutes = require('./modules/jobMatches/jobMatches.routes');
 const coverLettersRoutes = require('./modules/coverLetters/coverLetters.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
-const { startJobsSyncScheduler } = require('./common/schedulers/jobsSyncScheduler');
+const {
+  startJobsSyncScheduler,
+} = require('./common/schedulers/jobsSyncScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -63,6 +65,7 @@ app.use(`${apiPrefix}/courses`, coursesRoutes);
 app.use(`${apiPrefix}/jobs`, jobsRoutes);
 app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
 app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
+app.use(`{apiPrefix}/profiles`, profileRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
@@ -77,8 +80,6 @@ app.get('/openapi/roadmaps.json', (req, res) => {
   );
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
 app.get('/openapi/courses.json', (req, res) => {
   res.sendFile(
     path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
@@ -95,4 +96,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-
