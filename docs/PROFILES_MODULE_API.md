@@ -119,6 +119,7 @@ All ids are UUID strings. Timestamps are ISO 8601 strings. Dates are `YYYY-MM-DD
 | --- | --- | --- |
 | `id` | string (uuid) | Profile primary key |
 | `user_id` | string (uuid) | Owner user id |
+| `name` | string\|null | User's name from the related `users` table. Returned only by `GET /me`; read-only on the profile |
 | `education_level_id` | string (uuid)\|null | FK to `education_level` |
 | `university` | string\|null | |
 | `major` | string\|null | |
@@ -221,6 +222,7 @@ All ids are UUID strings. Timestamps are ISO 8601 strings. Dates are `YYYY-MM-DD
     "profile": {
       "id": "b1f2...",
       "user_id": "a9c8...",
+      "name": "Ahmed Hassan",
       "education_level_id": null,
       "university": "Cairo University",
       "major": "Computer Science",
@@ -240,6 +242,8 @@ All ids are UUID strings. Timestamps are ISO 8601 strings. Dates are `YYYY-MM-DD
 ```
 
 - **Errors:** `401` no/invalid token, `404` if the user has no profile row.
+
+> `name` is read from the related `users` table (via `profiles.user_id`) and flattened onto the profile. It is **read-only here** and only returned by `GET /me` (not by `PATCH /me`). To change the name, use the users/auth module.
 
 ---
 
@@ -534,6 +538,7 @@ Below is a minimal, dependency-light integration using the `http` package. Swap 
 class Profile {
   final String id;
   final String userId;
+  final String? name;
   final String? educationLevelId;
   final String? university;
   final String? major;
@@ -551,6 +556,7 @@ class Profile {
   Profile({
     required this.id,
     required this.userId,
+    this.name,
     this.educationLevelId,
     this.university,
     this.major,
@@ -569,6 +575,7 @@ class Profile {
   factory Profile.fromJson(Map<String, dynamic> j) => Profile(
         id: j['id'] as String,
         userId: j['user_id'] as String,
+        name: j['name'] as String?,
         educationLevelId: j['education_level_id'] as String?,
         university: j['university'] as String?,
         major: j['major'] as String?,

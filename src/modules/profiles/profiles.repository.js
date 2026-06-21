@@ -31,6 +31,18 @@ const findProfileByUserId = async (userId) => {
   return data;
 };
 
+const findProfileWithUserByUserId = async (userId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*, users(name)')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch profile');
+  return data;
+};
+
 const updateProfile = async (userId, payload) => {
   const client = ensureSupabase();
   const { data, error } = await client
@@ -208,6 +220,7 @@ module.exports = {
   findExperienceByIdForProfile,
   findExperiencesByProfileId,
   findProfileByUserId,
+  findProfileWithUserByUserId,
   updateProfile,
   updateExperience,
   findEducationById,

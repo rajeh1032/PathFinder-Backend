@@ -23,9 +23,16 @@ const getProfileForUser = async (userId) => {
 
 const getMyProfile = async (user) => {
   const userId = getAuthenticatedUserId(user);
-  const profile = await getProfileForUser(userId);
+  const profile = await profilesRepository.findProfileWithUserByUserId(userId);
 
-  return { profile };
+  if (!profile) {
+    throw new AppError('Profile not found', 404);
+  }
+
+  // Flatten the embedded user record so the response exposes a top-level `name`.
+  const { users, ...profileFields } = profile;
+
+  return { profile: { ...profileFields, name: users?.name ?? null } };
 };
 
 const updateMyProfile = async ({ user, body }) => {
