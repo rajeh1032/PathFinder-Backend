@@ -488,9 +488,52 @@ const findApprovedCourseSkillRows = async (skillIds) => {
   return data || [];
 };
 
+const findCourseById = async (courseId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('courses')
+    .select(PUBLIC_COURSE_FIELDS)
+    .eq('id', courseId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch course');
+  return data;
+};
+
+const updateCourse = async ({ courseId, changes }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('courses')
+    .update(changes)
+    .eq('id', courseId)
+    .select(PUBLIC_COURSE_FIELDS)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to update course');
+  return data;
+};
+
+const deleteCourse = async (courseId) => {
+  const client = ensureSupabase();
+  // All FKs referencing courses(id) are ON DELETE CASCADE, so dependent
+  // course_skills/saved_courses/course_enrollments rows are removed by the DB.
+  const { data, error } = await client
+    .from('courses')
+    .delete()
+    .eq('id', courseId)
+    .select('id')
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to delete course');
+  return data;
+};
+
 module.exports = {
   findCoursesPage,
   findAvailableCourseById,
+  findCourseById,
+  updateCourse,
+  deleteCourse,
   findUserCourseStates,
   findSavedCoursesPage,
   findEnrollmentCoursesPage,

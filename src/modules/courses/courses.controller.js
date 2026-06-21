@@ -70,9 +70,30 @@ const updateEnrollment = asyncHandler(async (req, res) => {
   return sendSuccess(res, result, 'Course enrollment updated successfully');
 });
 
+const updateCourse = asyncHandler(async (req, res) => {
+  const result = await coursesService.updateCourse({
+    user: req.user,
+    courseId: req.params.id,
+    payload: req.body,
+  });
+
+  return sendSuccess(res, result, 'Course updated successfully');
+});
+
+const deleteCourse = asyncHandler(async (req, res) => {
+  const result = await coursesService.deleteCourse({
+    user: req.user,
+    courseId: req.params.id,
+  });
+
+  return sendSuccess(res, result, 'Course deleted successfully');
+});
+
 module.exports = {
   getCourses,
   getCourseById,
+  updateCourse,
+  deleteCourse,
   getSavedCourses,
   saveCourse,
   unsaveCourse,

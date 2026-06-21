@@ -38,6 +38,8 @@ Mounted by `src/server.js`:
 | `PATCH` | `/api/v1/roadmaps/:roadmapId/steps/:stepId/progress` | Update step progress | Yes |
 | `POST` | `/api/v1/courses/import/preview` | Preview MaharaTech course import, fetch metadata, run `course_analysis`, and match skills | Yes, admin |
 | `POST` | `/api/v1/courses/import/confirm` | Save an approved imported course and course-skill mappings | Yes, admin |
+| `PATCH` | `/api/v1/courses/:id` | Update a course | Yes, admin |
+| `DELETE` | `/api/v1/courses/:id` | Delete a course | Yes, admin |
 | `GET` | `/api/v1/courses/recommended` | Return deterministic course recommendations for the authenticated user | Yes |
 | `GET` | `/api/v1/interviews/career-paths` (also `/api/interviews/...`) | List active career paths | Yes |
 | `POST` | `/api/v1/interviews/sessions` (also `/api/interviews/...`) | Generate an interview session | Yes |

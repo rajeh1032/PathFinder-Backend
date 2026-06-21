@@ -12,6 +12,7 @@ const {
 const coursesController = require('./courses.controller');
 const {
   confirmCourseImportSchema,
+  updateCourseSchema,
   previewCourseImportSchema,
   recommendedCoursesQuerySchema,
   coursesQuerySchema,
@@ -93,6 +94,22 @@ router.get(
   authenticate,
   validateParams(uuidParamSchema),
   coursesController.getCourseById,
+);
+
+router.patch(
+  '/:id',
+  authenticate,
+  authorize('admin'),
+  validateParams(uuidParamSchema),
+  validateBody(updateCourseSchema),
+  coursesController.updateCourse,
+);
+router.delete(
+  '/:id',
+  authenticate,
+  authorize('admin'),
+  validateParams(uuidParamSchema),
+  coursesController.deleteCourse,
 );
 
 module.exports = router;

@@ -9,6 +9,9 @@ const {
 } = require('../ai/prompts/cvAnalysis.prompt');
 const { generateJsonCompletion } = require('../ai/ai.service');
 const { getRagContextForFeature } = require('../rag/rag.service');
+const {
+  scheduleJobsPreparationForUser,
+} = require('../jobs/jobsPreparation.service');
 const cvParserService = require('./cvParser.service');
 const cvsRepository = require('./cvs.repository');
 
@@ -285,6 +288,13 @@ const analyzeCv = async ({ file, user }) => {
     });
 
     cv = await cvsRepository.updateCv(cv.id, { status: 'completed' });
+
+    scheduleJobsPreparationForUser({
+      userId,
+      reason: 'cv_analysis_completed',
+      syncIfEmpty: true,
+      generateMatches: true,
+    });
 
     return {
       cv: serializeCv(cv),

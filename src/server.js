@@ -20,6 +20,7 @@ const jobsRoutes = require('./modules/jobs/jobs.routes');
 const jobMatchesRoutes = require('./modules/jobMatches/jobMatches.routes');
 const coverLettersRoutes = require('./modules/coverLetters/coverLetters.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
+const skillsRoutes = require('./modules/skills/skills.routes');
 const {
   startJobsSyncScheduler,
 } = require('./common/schedulers/jobsSyncScheduler');
@@ -68,6 +69,7 @@ app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
 app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
 app.use(`${apiPrefix}/profiles`, profileRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
+app.use(`${apiPrefix}/skills`, skillsRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
   res.sendFile(
