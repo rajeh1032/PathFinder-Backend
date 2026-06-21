@@ -278,3 +278,72 @@ module.exports = {
   findLatestCompletedAnalysisForUser,
   findLatestCvForUser,
 };
+
+// ===== Admin CV analyses (read-only) =====
+// Joins cv_analyses -> cvs -> users so admins can review every analysis.
+const ADMIN_CV_ANALYSIS_SELECT = `
+  id,
+  cv_id,
+  score,
+  model,
+  summary,
+  strengths,
+  weaknesses,
+  suggestions,
+  detected_skills,
+  extracted,
+  generated_by_type,
+  status,
+  reviewed_by_admin_id,
+  reviewed_at,
+  created_at,
+  cvs!inner (
+    id,
+    original_name,
+    mime_type,
+    size_bytes,
+    status,
+    created_at,
+    user_id,
+    users!inner ( id, name, email )
+  )
+`;
+
+const findAllCvAnalyses = async ({ page = 1, limit = 20, status = '' } = {}) => {
+  const client = ensureSupabase();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = client
+    .from('cv_analyses')
+    .select(ADMIN_CV_ANALYSIS_SELECT, { count: 'exact' });
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error, count } = await query
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  handleSupabaseError(error, 'Failed to fetch CV analyses');
+
+  return { items: data || [], totalItems: count || 0 };
+};
+
+const findCvAnalysisById = async (analysisId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('cv_analyses')
+    .select(ADMIN_CV_ANALYSIS_SELECT)
+    .eq('id', analysisId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch CV analysis');
+  return data;
+};
+
+Object.assign(module.exports, {
+  findAllCvAnalyses,
+  findCvAnalysisById,
+});

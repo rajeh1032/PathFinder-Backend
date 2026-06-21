@@ -54,3 +54,19 @@ router.get('/me/latest-analysis', authenticate, cvsController.getLatestAnalysis)
 router.get('/me/status', authenticate, cvsController.getStatus);
 
 module.exports = router;
+
+// ===== Admin CV analyses (read-only) =====
+// Registered after the user-scoped routes above so `/me/*` is matched first.
+const { authorize } = require('../../common/middlewares/auth.middleware');
+const { validateParams } = require('../../common/middlewares/validate.middleware');
+const { cvAnalysisIdParamSchema } = require('./cvs.schema');
+
+router.get('/', authenticate, authorize('admin'), cvsController.listCvAnalyses);
+
+router.get(
+  '/:id',
+  authenticate,
+  authorize('admin'),
+  validateParams(cvAnalysisIdParamSchema),
+  cvsController.getCvAnalysisById,
+);

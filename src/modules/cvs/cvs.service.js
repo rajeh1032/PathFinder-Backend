@@ -370,3 +370,98 @@ module.exports = {
   getLatestAnalysis,
   getStatus,
 };
+
+// ===== Admin CV analyses (read-only) =====
+const { buildPaginationMeta } = require('../../common/utils/pagination');
+
+const ADMIN_CV_ANALYSIS_STATUSES = ['completed', 'failed', 'reviewed'];
+
+const normalizeCvAnalysesQuery = (query = {}) => {
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+  const status =
+    typeof query.status === 'string' ? query.status.trim() : '';
+
+  if (status && !ADMIN_CV_ANALYSIS_STATUSES.includes(status)) {
+    throw new AppError(
+      'Status must be one of completed, failed, or reviewed',
+      400,
+    );
+  }
+
+  return { page, limit, status };
+};
+
+const serializeAdminCvAnalysis = (row) => {
+  if (!row) {
+    return row;
+  }
+
+  const cv = row.cvs || {};
+  const user = cv.users || {};
+  const extracted = row.extracted && typeof row.extracted === 'object' ? row.extracted : {};
+
+  return {
+    id: row.id,
+    cv_id: row.cv_id,
+    score: row.score,
+    model: row.model,
+    summary: row.summary,
+    strengths: Array.isArray(row.strengths) ? row.strengths : [],
+    weaknesses: Array.isArray(row.weaknesses) ? row.weaknesses : [],
+    suggestions: Array.isArray(row.suggestions) ? row.suggestions : [],
+    detected_skills: Array.isArray(row.detected_skills) ? row.detected_skills : [],
+    extracted,
+    generated_by_type: row.generated_by_type,
+    status: row.status,
+    reviewed_by_admin_id: row.reviewed_by_admin_id || null,
+    reviewed_at: row.reviewed_at || null,
+    created_at: row.created_at,
+    cv: {
+      id: cv.id || null,
+      original_name: cv.original_name || null,
+      mime_type: cv.mime_type || null,
+      size_bytes: cv.size_bytes || null,
+      status: cv.status || null,
+      created_at: cv.created_at || null,
+    },
+    user: {
+      id: user.id || null,
+      name: user.name || null,
+      email: user.email || null,
+    },
+  };
+};
+
+const listCvAnalyses = async (query) => {
+  const filters = normalizeCvAnalysesQuery(query);
+  const { items, totalItems } = await cvsRepository.findAllCvAnalyses(filters);
+
+  return {
+    items: items.map(serializeAdminCvAnalysis),
+    pagination: buildPaginationMeta({
+      page: filters.page,
+      limit: filters.limit,
+      totalItems,
+    }),
+  };
+};
+
+const getCvAnalysisById = async (analysisId) => {
+  if (!analysisId) {
+    throw new AppError('CV analysis id is required', 400);
+  }
+
+  const row = await cvsRepository.findCvAnalysisById(analysisId);
+
+  if (!row) {
+    throw new AppError('CV analysis not found', 404);
+  }
+
+  return serializeAdminCvAnalysis(row);
+};
+
+Object.assign(module.exports, {
+  listCvAnalyses,
+  getCvAnalysisById,
+});

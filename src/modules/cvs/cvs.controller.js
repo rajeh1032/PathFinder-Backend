@@ -26,3 +26,27 @@ module.exports = {
   getLatestAnalysis,
   getStatus,
 };
+
+// ===== Admin CV analyses (read-only) =====
+const listCvAnalyses = asyncHandler(async (req, res) => {
+  const { items, pagination } = await cvsService.listCvAnalyses(req.query);
+
+  return sendSuccess(
+    res,
+    { analyses: items },
+    'CV analyses fetched successfully',
+    200,
+    { pagination },
+  );
+});
+
+const getCvAnalysisById = asyncHandler(async (req, res) => {
+  const analysis = await cvsService.getCvAnalysisById(req.params.id);
+
+  return sendSuccess(res, { analysis }, 'CV analysis fetched successfully');
+});
+
+Object.assign(module.exports, {
+  listCvAnalyses,
+  getCvAnalysisById,
+});
