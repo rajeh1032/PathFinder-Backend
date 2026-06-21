@@ -12,17 +12,26 @@ const {
   updateExperienceSchema,
   createEducationSchema,
   updateEducationSchema,
+  educationParamSchema,
+  updateProfileSchema,
 } = require('./profiles.schema');
 
 const router = express.Router();
+
+router.get('/me', authenticate, profilesController.getMyProfile);
+
+router.patch(
+  '/me',
+  authenticate,
+  validateBody(updateProfileSchema),
+  profilesController.updateMyProfile,
+);
 
 router.get(
   '/me/experiences',
   authenticate,
   profilesController.getMyExperiences,
 );
-
-router.get('/me/education', authenticate, profilesController.getEducation);
 
 router.post(
   '/me/experiences',
@@ -53,18 +62,35 @@ router.delete(
   profilesController.deleteMyExperience,
 );
 
+router.get('/me/education', authenticate, profilesController.getEducation);
+
 router.post(
   '/me/education',
-  validateBody(createEducationSchema),
   authenticate,
+  validateBody(createEducationSchema),
   profilesController.createEducation,
+);
+
+router.get(
+  '/me/education/:id',
+  authenticate,
+  validateParams(educationParamSchema),
+  profilesController.getEducationById,
 );
 
 router.patch(
   '/me/education/:id',
-  validateBody(updateEducationSchema),
   authenticate,
+  validateParams(educationParamSchema),
+  validateBody(updateEducationSchema),
   profilesController.updateEducation,
+);
+
+router.delete(
+  '/me/education/:id',
+  authenticate,
+  validateParams(educationParamSchema),
+  profilesController.deleteEducation,
 );
 
 router.get('/me/careerPahts', profilesController.getAllTargetCareer);
