@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 const path = require('path');
 const express = require('express');
@@ -12,6 +12,7 @@ const interviewsRoutes = require('./modules/interviews/interviews.routes');
 const ragRoutes = require('./modules/rag/rag.routes');
 const authRoutes = require('./modules/auth/auth.routes');
 const roadmapRoutes = require('./modules/roadmaps/roadmaps.routes');
+const profileRoutes = require('./modules/profiles/profiles.routes');
 const testRoutes = require('./modules/test/test.routes');
 const chatRouter = require('./modules/chat/chat.routes');
 const userRoutes = require('./modules/users/users.routes');
@@ -19,7 +20,9 @@ const jobsRoutes = require('./modules/jobs/jobs.routes');
 const jobMatchesRoutes = require('./modules/jobMatches/jobMatches.routes');
 const coverLettersRoutes = require('./modules/coverLetters/coverLetters.routes');
 const dashboardRoutes = require('./modules/dashboard/dashboard.routes');
-const { startJobsSyncScheduler } = require('./common/schedulers/jobsSyncScheduler');
+const {
+  startJobsSyncScheduler,
+} = require('./common/schedulers/jobsSyncScheduler');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -62,6 +65,7 @@ app.use(`${apiPrefix}/courses`, coursesRoutes);
 app.use(`${apiPrefix}/jobs`, jobsRoutes);
 app.use(`${apiPrefix}/job-matches`, jobMatchesRoutes);
 app.use(`${apiPrefix}/cover-letters`, coverLettersRoutes);
+app.use(`${apiPrefix}/profiles`, profileRoutes);
 app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 
 app.get('/openapi/rag.json', (req, res) => {
@@ -92,4 +96,3 @@ if (require.main === module) {
 }
 
 module.exports = app;
-
