@@ -77,8 +77,6 @@ app.get('/openapi/roadmaps.json', (req, res) => {
   );
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
 app.get('/openapi/courses.json', (req, res) => {
   res.sendFile(
     path.resolve(__dirname, '../docs/openapi/pathfinder-courses.openapi.json'),
