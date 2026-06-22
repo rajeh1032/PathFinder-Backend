@@ -11,7 +11,10 @@ const listJobs = asyncHandler(async (req, res) => {
 const listMatchedJobs = asyncHandler(async (req, res) => {
   const userId = getRequestUserId(req);
   const result = await jobsService.listMatchedJobs({ userId, ...req.query });
-  return sendSuccess(res, result.jobs, 'Matched jobs fetched successfully', 200, { pagination: result.pagination });
+  return sendSuccess(res, result.jobs, 'Matched jobs fetched successfully', 200, {
+    pagination: result.pagination,
+    sync: result.sync,
+  });
 });
 
 const getJobById = asyncHandler(async (req, res) => {

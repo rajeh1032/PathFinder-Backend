@@ -103,6 +103,7 @@ const saveMatch = async (userId, job, match) => {
 
 const generateMatches = async (userId, {
   jobId,
+  jobIds,
   limit,
   concurrency,
   keyword,
@@ -120,8 +121,13 @@ const generateMatches = async (userId, {
   const safeConcurrency = Math.min(5, Math.max(1, Number(concurrency) || 2));
   const searchKeyword = keyword || profile?.career_paths?.title || profile?.headline;
   const candidateLimit = Math.min(100, Math.max(safeLimit * 3, safeLimit));
+  const requestedJobIds = Array.isArray(jobIds)
+    ? [...new Set(jobIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
   const jobs = jobId
     ? [await jobsRepository.findJobById(jobId)]
+    : requestedJobIds.length
+      ? await Promise.all(requestedJobIds.slice(0, safeLimit).map((id) => jobsRepository.findJobById(id)))
     : (await jobsRepository.listJobs({
       limit: candidateLimit,
       status: 'published',

@@ -1,7 +1,6 @@
 ﻿const axios = require('axios');
 const AppError = require('../../common/errors/AppError');
 const jobsRepository = require('./jobs.repository');
-const { prepareJobsForUser } = require('./jobsPreparation.service');
 
 const SYNCED_JOB_SOURCE = 'apify_linkedin';
 const SYNCED_JOB_SOURCE_TYPE = 'linkedin';
@@ -728,12 +727,7 @@ const getJobById = async (id) => {
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
   const profile = await jobsRepository.getUserProfile(userId);
-  const requestedLimit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
-  const repositoryFilters = {
-    ...filters,
-    limit: Math.min(100, Math.max(requestedLimit * 3, requestedLimit)),
-  };
-  let result = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
+  const requestedLimit = Math.min(30, Math.max(1, Number(filters.limit) || 20));
   const buildJobs = (matches) => {
     const seenJobs = new Set();
     return matches
@@ -749,24 +743,51 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
       })
       .slice(0, requestedLimit);
   };
-  let jobs = buildJobs(result.matches);
 
-  if (jobs.length < requestedLimit && filters.autoPrepare !== 'false') {
-    await prepareJobsForUser({
-      userId,
-      reason: jobs.length ? 'matched_jobs_under_limit' : 'matched_jobs_empty',
-      syncIfEmpty: true,
-      forceSync: true,
-      generateMatches: true,
-      matchLimit: requestedLimit,
-      syncMaxItems: Math.min(30, requestedLimit),
-    });
-
-    result = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
-    jobs = buildJobs(result.matches);
+  if (filters.autoSync === 'false') {
+    const result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+    const jobs = buildJobs(result.matches);
+    return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
   }
 
-  return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
+  const syncResult = await syncJobsFromApify({
+    userId,
+    maxItems: requestedLimit,
+    allowFallback: filters.includeFallback === true || filters.includeFallback === 'true',
+  });
+  const syncedJobs = (syncResult.jobs || [])
+    .filter((job) => isCareerAlignedJob(job, profile))
+    .slice(0, requestedLimit);
+  const jobMatchesService = require('../jobMatches/jobMatches.service');
+  const matches = syncedJobs.length
+    ? await jobMatchesService.generateMatches(userId, {
+      jobIds: syncedJobs.map((job) => job.id),
+      limit: requestedLimit,
+      concurrency: Math.min(5, Math.max(1, Number(filters.concurrency) || 2)),
+    })
+    : [];
+  const jobs = buildJobs(matches);
+
+  return {
+    jobs,
+    pagination: {
+      page: 1,
+      limit: requestedLimit,
+      totalItems: jobs.length,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+    sync: {
+      search: syncResult.search,
+      location: syncResult.location,
+      requestedMaxItems: syncResult.requestedMaxItems,
+      effectiveMaxItems: syncResult.effectiveMaxItems,
+      fetchedCount: syncResult.fetchedCount,
+      matchedInputCount: syncResult.matchedInputCount,
+      savedCount: syncResult.savedCount,
+    },
+  };
 };
 
 module.exports = {
