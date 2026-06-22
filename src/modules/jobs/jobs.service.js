@@ -431,6 +431,11 @@ const matchesSearch = (item, search) => {
   const backendSignal = ['backend', 'back-end', 'back end', 'server-side', 'node.js', 'nodejs', 'rails', 'django'].some((token) => titleAndCategory.includes(token));
   const looksLikeNonSoftwareEngineering = nonSoftwareEngineeringTokens.some((token) => haystack.includes(token));
   const hasTechSignal = [...techTokens].some((token) => titleAndCategory.includes(token));
+  const hasRoleSignal = expectsFrontend
+    ? frontendSignal
+    : expectsBackend
+      ? backendSignal
+      : false;
 
   if (expectsTechRole && looksLikeNonSoftwareEngineering && !hasTechSignal) {
     return false;
@@ -451,7 +456,9 @@ const matchesSearch = (item, search) => {
   if (specificTokens.length) {
     const titleSpecificMatch = specificTokens.some((token) => titleAndCategory.includes(token));
     const descriptionSpecificMatch = specificTokens.some((token) => description.includes(token));
-    const roleSpecificMatch = expectsFrontend || expectsBackend ? titleSpecificMatch : descriptionSpecificMatch;
+    const roleSpecificMatch = expectsFrontend || expectsBackend
+      ? hasRoleSignal || titleSpecificMatch
+      : descriptionSpecificMatch;
     return titleSpecificMatch || roleSpecificMatch || (genericMatchesTitle && (!expectsTechRole || hasTechSignal));
   }
 

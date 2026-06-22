@@ -118,7 +118,6 @@ const prepareJobsForUser = async ({
       summary.matches = await jobMatchesService.generateMatches(userId, {
         limit: Math.min(100, toPositiveInt(matchLimit, config.matchLimit)),
         concurrency: config.matchConcurrency,
-        keyword: searchContext.search,
         location: searchContext.location,
       });
     } catch (error) {
