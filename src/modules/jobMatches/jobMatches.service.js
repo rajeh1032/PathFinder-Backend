@@ -69,11 +69,26 @@ const createMatch = async (userId, job, skills, profile, ragContext) => {
   }
 };
 
-const saveMatch = async (userId, job, match) => {
+const getLatestCompletedCvId = async (userId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('cvs')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch latest completed CV');
+  return data?.id || null;
+};
+
+const saveMatch = async (userId, job, match, cvId = null) => {
   const client = ensureSupabase();
   const payload = {
     user_id: userId,
     job_id: job.id,
+    cv_id: cvId,
     match_percentage: match.match_percentage,
     matched_skills: match.matched_skills,
     missing_skills: match.missing_skills,
@@ -112,9 +127,10 @@ const generateMatches = async (userId, {
   level,
   includeManual,
 } = {}) => {
-  const [skills, profile] = await Promise.all([
+  const [skills, profile, cvId] = await Promise.all([
     jobsRepository.listUserSkills(userId),
     jobsRepository.getUserProfile(userId),
+    getLatestCompletedCvId(userId),
   ]);
   const ragContext = await ragService.getRagContextForFeature('job_matching');
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
@@ -145,7 +161,7 @@ const generateMatches = async (userId, {
 
   const matches = await mapWithConcurrency(jobs.filter(Boolean), safeConcurrency, async (job) => {
     const match = await createMatch(userId, job, skills, profile, ragContext);
-    return saveMatch(userId, job, match);
+    return saveMatch(userId, job, match, cvId);
   });
 
   return matches.filter(Boolean).sort((a, b) => b.match_percentage - a.match_percentage);

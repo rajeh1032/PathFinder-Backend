@@ -1,12 +1,37 @@
 const AppError = require('../../common/errors/AppError');
 const { ensureSupabase, handleSupabaseError } = require('../../common/utils/supabaseRepository');
-const { generateText } = require('../ai/ai.service');
+const aiService = require('../ai/ai.service');
 const jobsRepository = require('../jobs/jobs.repository');
 const ragService = require('../rag/rag.service');
 
 const COVER_SELECT = 'id,user_id,job_id,content,status,version,language,generated_by_type,title,score,tone,target_role,company_name,word_count,last_edited_at,exported_at,created_at,updated_at,jobs(id,title,company,location,description,required_skills)';
+const COVER_LETTER_GEMINI_SCHEMA = {
+  type: 'object',
+  properties: {
+    content: { type: 'string' },
+    score: { type: 'integer', minimum: 0, maximum: 100 },
+    insights: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: { type: 'string', enum: ['success', 'warning', 'info'] },
+          message: { type: 'string' },
+        },
+        required: ['type', 'message'],
+      },
+    },
+  },
+  required: ['content', 'score', 'insights'],
+};
 
 const countWords = (text) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
+const clampScore = (value, fallback = 0) => Math.max(0, Math.min(100, Math.round(Number(value) || fallback)));
+const asArray = (value) => Array.isArray(value) ? value : [];
+const truncate = (value, maxLength = 2500) => {
+  const text = String(value || '').trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+};
 
 const buildFallbackContent = ({ job, profile, payload }) => {
   const role = job.title;
@@ -21,51 +46,152 @@ const getUserSkills = async (userId) => {
   return jobsRepository.listUserSkills(userId);
 };
 
-const callGemini = async ({ job, profile, skills, payload, ragContext }) => {
+const getLatestCvAnalysis = async (userId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('cvs')
+    .select('id,original_name,created_at,cv_analyses(score,summary,strengths,weaknesses,suggestions,detected_skills,extracted,status,created_at)')
+    .eq('user_id', userId)
+    .eq('status', 'completed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  handleSupabaseError(error, 'Failed to fetch latest CV analysis');
+
+  const analysis = Array.isArray(data?.cv_analyses)
+    ? data.cv_analyses[0]
+    : data?.cv_analyses;
+
+  if (!analysis) return null;
+
+  return {
+    cv_id: data.id,
+    original_name: data.original_name,
+    cv_score: analysis.score,
+    summary: analysis.summary,
+    strengths: analysis.strengths,
+    weaknesses: analysis.weaknesses,
+    suggestions: analysis.suggestions,
+    detected_skills: analysis.detected_skills,
+    extracted: analysis.extracted,
+  };
+};
+
+const calculateFallbackScore = ({ job, profile, skills, cvAnalysis }) => {
+  const required = asArray(job.required_skills).map((skill) => String(skill).toLowerCase());
+  const userSkills = skills.map((skill) => String(skill.name || '').toLowerCase());
+  const matchedCount = required.filter((skill) =>
+    userSkills.some((userSkill) => userSkill === skill || userSkill.includes(skill) || skill.includes(userSkill)),
+  ).length;
+  const skillScore = required.length ? Math.round((matchedCount / required.length) * 55) : 20;
+  const target = String(profile?.career_paths?.title || '').toLowerCase();
+  const role = `${job.title || ''} ${job.category || ''}`.toLowerCase();
+  const targetScore = target && role.includes(target.split(/\s+/)[0]) ? 20 : 5;
+  const cvScore = cvAnalysis ? 15 : 0;
+  return clampScore(skillScore + targetScore + cvScore, cvAnalysis ? 70 : 45);
+};
+
+const normalizeAiResult = (result, fallbackContent, fallbackScore) => {
+  const content = String(result?.content || fallbackContent || '').trim();
+  const score = clampScore(result?.score, fallbackScore);
+  const insights = asArray(result?.insights)
+    .map((item) => ({
+      type: ['success', 'warning', 'info'].includes(item?.type) ? item.type : 'info',
+      message: String(item?.message || '').trim(),
+    }))
+    .filter((item) => item.message)
+    .slice(0, 4);
+
+  return {
+    content,
+    score,
+    insights,
+  };
+};
+
+const callGemini = async ({ userId, job, profile, skills, cvAnalysis, payload, ragContext }) => {
   const skillText = skills.map((skill) => `${skill.name}${skill.level ? ` (${skill.level})` : ''}`).join(', ') || 'N/A';
-  const prompt = [
-    'Write one concise, professional cover letter.',
-    'Return only the cover letter text. Do not use markdown.',
-    '',
-    `Role: ${job.title}`,
-    `Company: ${job.company}`,
-    `Location: ${job.location || 'N/A'}`,
-    `Job description: ${job.description || 'N/A'}`,
-    `Required skills: ${(job.required_skills || []).join(', ') || 'N/A'}`,
-    `Tone: ${payload.tone || 'professional'}`,
-    `Language: ${payload.language || 'en'}`,
-    `Focus keywords: ${(payload.keywords || []).join(', ') || 'N/A'}`,
-    '',
-    'Candidate profile:',
-    `Headline: ${profile?.headline || 'N/A'}`,
-    `Target career: ${profile?.career_paths?.title || 'N/A'}`,
-    `Location: ${profile?.location || 'N/A'}`,
-    `Major: ${profile?.major || 'N/A'}`,
-    `Skills: ${skillText}`,
-    `Company interest: ${payload.companyInterest || 'N/A'}`,
-    `Achievement to mention: ${payload.achievement || 'N/A'}`,
-    '',
-    'RAG context for cover_letter:',
-    ragContext || 'No RAG context is currently indexed for cover_letter.',
-    '',
-    'Requirements:',
-    '- Keep it between 140 and 220 words.',
-    '- Make it tailored to the role and company.',
-    '- Mention the candidate skills naturally.',
-    '- Avoid inventing experience not provided.',
-    '- Follow the RAG context as product guidance when relevant, but do not copy it verbatim.',
-  ].join('\n');
+  const fallbackContent = buildFallbackContent({ job, profile, payload });
+  const fallbackScore = calculateFallbackScore({ job, profile, skills, cvAnalysis });
+  const messages = [
+    {
+      role: 'system',
+      content:
+        'You are PathFinder AI Cover Letter Assistant. Return strict JSON only. Do not include markdown, comments, prose outside JSON, or extra top-level keys.',
+    },
+    {
+      role: 'user',
+      content: [
+        'Write one concise, professional cover letter and evaluate its strength.',
+        '',
+        'Return exactly this JSON shape:',
+        JSON.stringify({ content: '', score: 0, insights: [{ type: 'success', message: '' }] }, null, 2),
+        '',
+        `Role: ${job.title}`,
+        `Company: ${job.company}`,
+        `Location: ${job.location || 'N/A'}`,
+        `Job description: ${truncate(job.description) || 'N/A'}`,
+        `Required skills: ${(job.required_skills || []).join(', ') || 'N/A'}`,
+        `Tone: ${payload.tone || 'professional'}`,
+        `Language: ${payload.language || 'en'}`,
+        `Focus keywords: ${(payload.keywords || []).join(', ') || 'N/A'}`,
+        '',
+        'Candidate profile:',
+        `Headline: ${profile?.headline || 'N/A'}`,
+        `Target career: ${profile?.career_paths?.title || 'N/A'}`,
+        `Location: ${profile?.location || 'N/A'}`,
+        `Major: ${profile?.major || 'N/A'}`,
+        `Skills: ${skillText}`,
+        `Company interest: ${payload.companyInterest || 'N/A'}`,
+        `Achievement to mention: ${payload.achievement || 'N/A'}`,
+        '',
+        'Latest CV analysis:',
+        cvAnalysis
+          ? JSON.stringify({
+            cv_score: cvAnalysis.cv_score,
+            summary: cvAnalysis.summary,
+            strengths: cvAnalysis.strengths,
+            weaknesses: cvAnalysis.weaknesses,
+            suggestions: cvAnalysis.suggestions,
+            detected_skills: cvAnalysis.detected_skills,
+            extracted: cvAnalysis.extracted,
+          }, null, 2)
+          : 'No completed CV analysis is available. Keep score conservative because evidence is limited.',
+        '',
+        'RAG context for cover_letter:',
+        ragContext || 'No RAG context is currently indexed for cover_letter.',
+        '',
+        'Requirements:',
+        '- Keep it between 140 and 220 words.',
+        '- Make it tailored to the role and company.',
+        '- Mention the candidate skills naturally.',
+        '- Avoid inventing experience not provided.',
+        '- score must be 0-100 and reflect the cover letter quality against job requirements, user skills, and CV evidence.',
+        '- If no CV analysis exists, do not give an excellent score unless profile and skills are strongly aligned.',
+        '- insights must be short mobile-friendly review notes: at least one success, one warning, and one info when possible.',
+        '- Follow the RAG context as product guidance when relevant, but do not copy it verbatim.',
+      ].join('\n'),
+    },
+  ];
 
   try {
-    const result = await generateText({
-      contents: prompt,
-      systemInstruction: 'You are a career writing assistant for students and fresh graduates.',
+    const result = await aiService.generateJsonCompletion({
+      userId,
+      feature: 'cover_letter',
+      messages,
+      responseSchemaHint: 'Cover letter content, score, and review insights',
+      responseJsonSchema: COVER_LETTER_GEMINI_SCHEMA,
       temperature: 0.7,
-      maxOutputTokens: 1200,
+      maxTokens: 1400,
     });
-    return result.text?.trim() || null;
+    return normalizeAiResult(result.data, fallbackContent, fallbackScore);
   } catch (error) {
-    return null;
+    return {
+      content: fallbackContent,
+      score: fallbackScore,
+      insights: [],
+      fallbackUsed: true,
+    };
   }
 };
 
@@ -76,9 +202,13 @@ const getProfile = async (userId) => {
   return data;
 };
 
-const createInsights = async (coverLetterId, content) => {
+const createInsights = async (coverLetterId, content, aiInsights = []) => {
   const client = ensureSupabase();
-  const rows = [
+  const rows = aiInsights.length ? aiInsights.map((insight) => ({
+    cover_letter_id: coverLetterId,
+    type: insight.type,
+    message: insight.message,
+  })) : [
     { cover_letter_id: coverLetterId, type: 'success', message: 'Strong alignment with job requirements' },
     { cover_letter_id: coverLetterId, type: 'success', message: 'Good use of relevant experience' },
     { cover_letter_id: coverLetterId, type: 'warning', message: countWords(content) < 160 ? 'Add measurable achievements' : 'Keep measurable achievements visible' },
@@ -101,16 +231,17 @@ const createVersion = async (coverLetterId, content, version, editedByUser = fal
 };
 
 const generateCoverLetter = async (userId, payload) => {
-  const [job, profile, skills, ragContext] = await Promise.all([
+  const [job, profile, skills, cvAnalysis, ragContext] = await Promise.all([
     jobsRepository.findJobById(payload.jobId),
     getProfile(userId),
     getUserSkills(userId),
+    getLatestCvAnalysis(userId),
     ragService.getRagContextForFeature('cover_letter'),
   ]);
   if (!job) throw new AppError('Job not found', 404);
 
-  const aiContent = await callGemini({ job, profile, skills, payload, ragContext });
-  const content = aiContent || buildFallbackContent({ job, profile, payload });
+  const generation = await callGemini({ userId, job, profile, skills, cvAnalysis, payload, ragContext });
+  const content = generation.content || buildFallbackContent({ job, profile, payload });
   const client = ensureSupabase();
   const row = {
     user_id: userId,
@@ -119,9 +250,9 @@ const generateCoverLetter = async (userId, payload) => {
     status: 'generated',
     version: 1,
     language: payload.language || 'en',
-    generated_by_type: aiContent ? 'ai' : 'system',
+    generated_by_type: generation.fallbackUsed ? 'system' : 'ai',
     title: `${job.title} at ${job.company}`,
-    score: 87,
+    score: generation.score,
     tone: payload.tone,
     target_role: job.title,
     company_name: job.company,
@@ -130,7 +261,7 @@ const generateCoverLetter = async (userId, payload) => {
   const { data, error } = await client.from('cover_letters').insert(row).select(COVER_SELECT).single();
   handleSupabaseError(error, 'Failed to create cover letter');
   await createVersion(data.id, content, 1, false);
-  const insights = await createInsights(data.id, content);
+  const insights = await createInsights(data.id, content, generation.insights);
   return { ...data, insights };
 };
 
