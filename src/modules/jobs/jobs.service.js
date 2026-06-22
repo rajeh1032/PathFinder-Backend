@@ -596,10 +596,16 @@ const getJobSkills = (job) => {
 };
 
 const DEFAULT_MIN_MATCH_SCORE = 50;
+const MATCHED_JOBS_CACHE_TTL_HOURS = Math.max(
+  1,
+  Number(process.env.USER_MATCHED_JOBS_CACHE_TTL_HOURS || process.env.JOBS_SYNC_INTERVAL_HOURS) || 12,
+);
 
 const includeManualJobs = (value) => value === true || value === 'true';
 const isSyncedJob = (job) =>
   job?.source === SYNCED_JOB_SOURCE || job?.source_type === SYNCED_JOB_SOURCE_TYPE;
+const isTruthy = (value) => value === true || value === 'true';
+const isFalsey = (value) => value === false || value === 'false';
 const hasAny = (text, tokens) => tokens.some((token) => text.includes(token));
 const isCareerAlignedJob = (job, profileOrSearch) => {
   const target = typeof profileOrSearch === 'string'
@@ -728,6 +734,10 @@ const getJobById = async (id) => {
 const listMatchedJobs = async ({ userId, ...filters }) => {
   const profile = await jobsRepository.getUserProfile(userId);
   const requestedLimit = Math.min(30, Math.max(1, Number(filters.limit) || 20));
+  const repositoryFilters = {
+    ...filters,
+    limit: Math.min(100, Math.max(requestedLimit * 3, requestedLimit)),
+  };
   const buildJobs = (matches) => {
     const seenJobs = new Set();
     return matches
@@ -743,18 +753,53 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
       })
       .slice(0, requestedLimit);
   };
+  const cachedResult = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
+  const cachedJobs = buildJobs(cachedResult.matches);
+  const latestCachedAt = cachedResult.matches
+    .map((match) => new Date(match.created_at).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0] || 0;
+  const cacheAgeMs = latestCachedAt ? Date.now() - latestCachedAt : Infinity;
+  const cacheTtlMs = MATCHED_JOBS_CACHE_TTL_HOURS * 60 * 60 * 1000;
+  const cacheFresh = cachedJobs.length > 0 && cacheAgeMs < cacheTtlMs;
+  const shouldUseCache = !isTruthy(filters.forceSync) && (cacheFresh || isFalsey(filters.autoSync));
 
-  if (filters.autoSync === 'false') {
-    const result = await jobsRepository.listStoredMatchedJobs(userId, filters);
-    const jobs = buildJobs(result.matches);
-    return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
+  if (shouldUseCache) {
+    return {
+      jobs: cachedJobs,
+      pagination: { ...cachedResult.pagination, totalItems: cachedJobs.length },
+      sync: {
+        skipped: true,
+        reason: cacheFresh ? 'cached_matches_are_fresh' : 'auto_sync_disabled',
+        cacheAgeHours: Number.isFinite(cacheAgeMs) ? Number((cacheAgeMs / 60 / 60 / 1000).toFixed(2)) : null,
+        cacheTtlHours: MATCHED_JOBS_CACHE_TTL_HOURS,
+      },
+    };
   }
 
-  const syncResult = await syncJobsFromApify({
-    userId,
-    maxItems: requestedLimit,
-    allowFallback: filters.includeFallback === true || filters.includeFallback === 'true',
-  });
+  let syncResult;
+  try {
+    syncResult = await syncJobsFromApify({
+      userId,
+      maxItems: requestedLimit,
+      allowFallback: filters.includeFallback === true || filters.includeFallback === 'true',
+    });
+  } catch (error) {
+    if (cachedJobs.length) {
+      return {
+        jobs: cachedJobs,
+        pagination: { ...cachedResult.pagination, totalItems: cachedJobs.length },
+        sync: {
+          failed: true,
+          fallbackToCache: true,
+          message: error.message,
+          cacheAgeHours: Number.isFinite(cacheAgeMs) ? Number((cacheAgeMs / 60 / 60 / 1000).toFixed(2)) : null,
+          cacheTtlHours: MATCHED_JOBS_CACHE_TTL_HOURS,
+        },
+      };
+    }
+    throw error;
+  }
   const syncedJobs = (syncResult.jobs || [])
     .filter((job) => isCareerAlignedJob(job, profile))
     .slice(0, requestedLimit);
