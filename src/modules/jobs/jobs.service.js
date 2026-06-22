@@ -533,7 +533,7 @@ const syncJobsFromApify = async ({ userId, search, location, maxItems, input, al
   if (!token || !actorId) throw new AppError('Apify token and actor id are required', 500);
 
   const context = await buildSearchContext({ userId, search, location });
-  const hardMaxItems = Math.min(20, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 20));
+  const hardMaxItems = Math.min(30, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 30));
   const safeMaxItems = Math.min(hardMaxItems, Math.max(1, Number(maxItems || process.env.APIFY_MAX_ITEMS) || hardMaxItems));
   const maxRunCostUsd = Math.max(0.01, Number(process.env.APIFY_MAX_RUN_COST_USD) || 0.05);
   const actorInput = buildApifyInput({ ...context, maxItems: safeMaxItems, input });
@@ -721,7 +721,12 @@ const getJobById = async (id) => {
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
   const profile = await jobsRepository.getUserProfile(userId);
-  let result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+  const requestedLimit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
+  const repositoryFilters = {
+    ...filters,
+    limit: Math.min(100, Math.max(requestedLimit * 3, requestedLimit)),
+  };
+  let result = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
   const buildJobs = (matches) => {
     const seenJobs = new Set();
     return matches
@@ -734,21 +739,23 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
         if (!isCareerAlignedJob(job, profile)) return false;
         seenJobs.add(job.id);
         return true;
-      });
+      })
+      .slice(0, requestedLimit);
   };
   let jobs = buildJobs(result.matches);
 
-  const requestedLimit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
   if (jobs.length < requestedLimit && filters.autoPrepare !== 'false') {
     await prepareJobsForUser({
       userId,
       reason: jobs.length ? 'matched_jobs_under_limit' : 'matched_jobs_empty',
       syncIfEmpty: true,
+      forceSync: true,
       generateMatches: true,
-      matchLimit: filters.limit,
+      matchLimit: requestedLimit,
+      syncMaxItems: Math.min(30, requestedLimit),
     });
 
-    result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+    result = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
     jobs = buildJobs(result.matches);
   }
 

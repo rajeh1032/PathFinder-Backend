@@ -11,15 +11,15 @@ const toPositiveInt = (value, fallback) => {
 
 const getPreparationConfig = () => ({
   maxItems: Math.min(
-    20,
+    30,
     toPositiveInt(
       process.env.USER_JOBS_SYNC_MAX_ITEMS,
-      toPositiveInt(process.env.JOBS_SYNC_MAX_ITEMS, toPositiveInt(process.env.APIFY_MAX_ITEMS, 20)),
+      toPositiveInt(process.env.JOBS_SYNC_MAX_ITEMS, toPositiveInt(process.env.APIFY_MAX_ITEMS, 30)),
     ),
   ),
   matchLimit: Math.min(
     100,
-    toPositiveInt(process.env.USER_JOB_MATCHES_LIMIT, 20),
+    toPositiveInt(process.env.USER_JOB_MATCHES_LIMIT, 30),
   ),
   matchConcurrency: Math.min(
     5,
@@ -63,12 +63,15 @@ const prepareJobsForUser = async ({
   userId,
   reason = 'manual',
   syncIfEmpty = true,
+  forceSync = false,
   generateMatches = true,
   matchLimit,
+  syncMaxItems,
 } = {}) => {
   if (!userId) return { skipped: true, reason: 'missing_user_id' };
 
   const config = getPreparationConfig();
+  const requestedMaxItems = Math.min(30, toPositiveInt(syncMaxItems, config.maxItems));
   const profile = await jobsRepository.getUserProfile(userId);
   const searchContext = buildSearchFromProfile(profile);
   const summary = {
@@ -81,9 +84,9 @@ const prepareJobsForUser = async ({
   };
 
   if (syncIfEmpty) {
-    const hasJobs = await hasPublishedJobsForSearch({
+    const hasJobs = forceSync ? false : await hasPublishedJobsForSearch({
       ...searchContext,
-      minCount: config.maxItems,
+      minCount: requestedMaxItems,
     });
 
     if (!hasJobs) {
@@ -92,7 +95,7 @@ const prepareJobsForUser = async ({
         summary.sync = await jobsService.syncJobsFromApify({
           userId,
           ...searchContext,
-          maxItems: config.maxItems,
+          maxItems: requestedMaxItems,
           allowFallback: false,
         });
       } catch (error) {
