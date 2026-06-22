@@ -1,4 +1,4 @@
-﻿const { ensureSupabase, handleSupabaseError } = require('../../common/utils/supabaseRepository');
+const { ensureSupabase, handleSupabaseError } = require('../../common/utils/supabaseRepository');
 const jobsRepository = require('../jobs/jobs.repository');
 const jobsService = require('../jobs/jobs.service');
 const aiService = require('../ai/ai.service');
@@ -218,4 +218,4 @@ const getMatch = async (userId, id) => {
   return data;
 };
 
-module.exports = { generateMatches, listMatches, getMatch };
+const ADMIN_MATCH_SELECT = 'id,user_id,job_id,cv_id,match_percentage,matched_skills,missing_skills,ai_reason,generated_by_type,status,created_at,users!inner(id,name,email),jobs(id,title,company,location,source,source_type,required_skills,employment_type,salary_range,level,category,company_logo_url,apply_url)'; const listAdminMatches = async (query = {}) => { const client = ensureSupabase(); const page = Math.max(1, Number(query.page) || 1); const limit = Math.min(100, Math.max(1, Number(query.limit) || 20)); const from = (page - 1) * limit; const to = page * limit - 1; const minScore = Math.max(0, Math.min(100, Number(query.minScore) || 0)); let request = client.from('job_matches').select(ADMIN_MATCH_SELECT, { count: 'exact' }).gte('match_percentage', minScore); if (query.userId) request = request.eq('user_id', query.userId); if (query.status) request = request.eq('status', query.status); if (query.generatedByType) request = request.eq('generated_by_type', query.generatedByType); const { data, error, count } = await request.order('match_percentage', { ascending: false }).order('created_at', { ascending: false }).range(from, to); handleSupabaseError(error, 'Failed to list job matches'); const totalItems = count || 0; return { matches: data || [], pagination: { page, limit, totalItems, totalPages: Math.max(1, Math.ceil(totalItems / limit)) } }; }; const getAdminMatch = async (id) => { const client = ensureSupabase(); const { data, error } = await client.from('job_matches').select(ADMIN_MATCH_SELECT).eq('id', id).maybeSingle(); handleSupabaseError(error, 'Failed to fetch job match'); if (!data) throw new AppError('Job match not found', 404); return data; }; module.exports = { generateMatches, listMatches, getMatch, listAdminMatches, getAdminMatch };

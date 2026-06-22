@@ -1,4 +1,4 @@
-﻿const { sendSuccess } = require('../../common/utils/apiResponse');
+const { sendSuccess } = require('../../common/utils/apiResponse');
 const asyncHandler = require('../../common/utils/asyncHandler');
 const { getRequestUserId } = require('../../common/utils/requestUser');
 const jobMatchesService = require('./jobMatches.service');
@@ -21,4 +21,14 @@ const getMatch = asyncHandler(async (req, res) => {
   return sendSuccess(res, match, 'Job match fetched successfully');
 });
 
-module.exports = { generateMatches, listMatches, getMatch };
+const listAdminMatches = asyncHandler(async (req, res) => {
+  const result = await jobMatchesService.listAdminMatches(req.query);
+  return sendSuccess(res, result.matches, 'Job matches fetched successfully', 200, { pagination: result.pagination });
+});
+
+const getAdminMatch = asyncHandler(async (req, res) => {
+  const match = await jobMatchesService.getAdminMatch(req.params.id);
+  return sendSuccess(res, match, 'Job match fetched successfully');
+});
+
+module.exports = { generateMatches, listMatches, getMatch, listAdminMatches, getAdminMatch };
