@@ -533,7 +533,7 @@ const syncJobsFromApify = async ({ userId, search, location, maxItems, input, al
   if (!token || !actorId) throw new AppError('Apify token and actor id are required', 500);
 
   const context = await buildSearchContext({ userId, search, location });
-  const hardMaxItems = Math.min(20, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 5));
+  const hardMaxItems = Math.min(20, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 20));
   const safeMaxItems = Math.min(hardMaxItems, Math.max(1, Number(maxItems || process.env.APIFY_MAX_ITEMS) || hardMaxItems));
   const maxRunCostUsd = Math.max(0.01, Number(process.env.APIFY_MAX_RUN_COST_USD) || 0.05);
   const actorInput = buildApifyInput({ ...context, maxItems: safeMaxItems, input });
@@ -594,6 +594,34 @@ const DEFAULT_MIN_MATCH_SCORE = 50;
 const includeManualJobs = (value) => value === true || value === 'true';
 const isSyncedJob = (job) =>
   job?.source === SYNCED_JOB_SOURCE || job?.source_type === SYNCED_JOB_SOURCE_TYPE;
+const hasAny = (text, tokens) => tokens.some((token) => text.includes(token));
+const isCareerAlignedJob = (job, profileOrSearch) => {
+  const target = typeof profileOrSearch === 'string'
+    ? profileOrSearch
+    : `${profileOrSearch?.career_paths?.title || ''} ${profileOrSearch?.career_paths?.category || ''} ${profileOrSearch?.headline || ''}`;
+  const targetText = String(target || '').toLowerCase();
+  const jobText = `${job?.title || ''} ${job?.category || ''} ${asArray(job?.required_skills).join(' ')}`.toLowerCase();
+
+  const frontendSignals = ['frontend', 'front-end', 'front end', 'react', 'angular', 'vue', 'ui developer'];
+  const backendSignals = ['backend', 'back-end', 'back end', 'node', 'express', 'java', '.net', 'spring', 'api', 'server'];
+  const dataSignals = ['data analyst', 'data analysis', 'data engineer', 'analytics', 'business intelligence'];
+  const mobileSignals = ['mobile', 'flutter', 'android', 'ios', 'react native'];
+
+  const targetBackend = hasAny(targetText, ['backend', 'back-end', 'back end', 'node']);
+  const targetFrontend = hasAny(targetText, ['frontend', 'front-end', 'front end', 'react']);
+  const targetData = hasAny(targetText, ['data']);
+  const targetMobile = hasAny(targetText, ['mobile', 'flutter', 'android', 'ios']);
+  const jobBackend = hasAny(jobText, backendSignals);
+  const jobFrontend = hasAny(jobText, frontendSignals);
+  const jobData = hasAny(jobText, dataSignals);
+  const jobMobile = hasAny(jobText, mobileSignals);
+
+  if (targetBackend) return jobBackend && !jobFrontend;
+  if (targetFrontend) return jobFrontend && !jobBackend;
+  if (targetData) return jobData;
+  if (targetMobile) return jobMobile;
+  return true;
+};
 
 const jobFromStoredMatch = (match) => {
   const { jobs: job } = match;
@@ -688,6 +716,7 @@ const getJobById = async (id) => {
 };
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
+  const profile = await jobsRepository.getUserProfile(userId);
   let result = await jobsRepository.listStoredMatchedJobs(userId, filters);
   const buildJobs = (matches) => {
     const seenJobs = new Set();
@@ -698,16 +727,18 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
         if (!includeManualJobs(filters.includeManual) && !isSyncedJob(job)) {
           return false;
         }
+        if (!isCareerAlignedJob(job, profile)) return false;
         seenJobs.add(job.id);
         return true;
       });
   };
   let jobs = buildJobs(result.matches);
 
-  if (!jobs.length && filters.autoPrepare !== 'false') {
+  const requestedLimit = Math.min(100, Math.max(1, Number(filters.limit) || 20));
+  if (jobs.length < requestedLimit && filters.autoPrepare !== 'false') {
     await prepareJobsForUser({
       userId,
-      reason: 'matched_jobs_empty',
+      reason: jobs.length ? 'matched_jobs_under_limit' : 'matched_jobs_empty',
       syncIfEmpty: true,
       generateMatches: true,
       matchLimit: filters.limit,
@@ -720,4 +751,11 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
   return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
 };
 
-module.exports = { listJobs, getJobById, listMatchedJobs, syncJobsFromApify, calculateJobMatch };
+module.exports = {
+  listJobs,
+  getJobById,
+  listMatchedJobs,
+  syncJobsFromApify,
+  calculateJobMatch,
+  isCareerAlignedJob,
+};

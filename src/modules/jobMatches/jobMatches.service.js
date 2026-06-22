@@ -118,12 +118,14 @@ const generateMatches = async (userId, {
   const ragContext = await ragService.getRagContextForFeature('job_matching');
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
   const safeConcurrency = Math.min(5, Math.max(1, Number(concurrency) || 2));
+  const searchKeyword = keyword || profile?.career_paths?.title || profile?.headline;
+  const candidateLimit = Math.min(100, Math.max(safeLimit * 3, safeLimit));
   const jobs = jobId
     ? [await jobsRepository.findJobById(jobId)]
     : (await jobsRepository.listJobs({
-      limit: safeLimit,
+      limit: candidateLimit,
       status: 'published',
-      keyword,
+      keyword: searchKeyword,
       location,
       category,
       level,
@@ -131,7 +133,9 @@ const generateMatches = async (userId, {
         source: SYNCED_JOB_SOURCE,
         sourceType: SYNCED_JOB_SOURCE_TYPE,
       }),
-    })).jobs;
+    })).jobs
+      .filter((job) => jobsService.isCareerAlignedJob(job, profile))
+      .slice(0, safeLimit);
 
   const matches = await mapWithConcurrency(jobs.filter(Boolean), safeConcurrency, async (job) => {
     const match = await createMatch(userId, job, skills, profile, ragContext);
@@ -143,6 +147,7 @@ const generateMatches = async (userId, {
 
 const listMatches = async (userId, query = {}) => {
   const client = ensureSupabase();
+  const profile = await jobsRepository.getUserProfile(userId);
   const page = Math.max(1, Number(query.page) || 1);
   const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
   const includeWeak = query.includeWeak === true || query.includeWeak === 'true';
@@ -167,6 +172,7 @@ const listMatches = async (userId, query = {}) => {
   const matches = (data || []).filter((match) => {
     if (!match.job_id || seenJobs.has(match.job_id)) return false;
     if (!includeManualJobs(query.includeManual) && !isSyncedJob(match.jobs)) return false;
+    if (!jobsService.isCareerAlignedJob(match.jobs, profile)) return false;
     seenJobs.add(match.job_id);
     return true;
   });
