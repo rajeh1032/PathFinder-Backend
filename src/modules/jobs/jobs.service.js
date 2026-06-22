@@ -600,7 +600,9 @@ const isCareerAlignedJob = (job, profileOrSearch) => {
     ? profileOrSearch
     : `${profileOrSearch?.career_paths?.title || ''} ${profileOrSearch?.career_paths?.category || ''} ${profileOrSearch?.headline || ''}`;
   const targetText = String(target || '').toLowerCase();
-  const jobText = `${job?.title || ''} ${job?.category || ''} ${asArray(job?.required_skills).join(' ')}`.toLowerCase();
+  const jobRoleText = `${job?.title || ''} ${job?.category || ''}`.toLowerCase();
+  const jobSkillsText = asArray(job?.required_skills).join(' ').toLowerCase();
+  const jobText = `${jobRoleText} ${jobSkillsText}`;
 
   const frontendSignals = ['frontend', 'front-end', 'front end', 'react', 'angular', 'vue', 'ui developer'];
   const backendSignals = ['backend', 'back-end', 'back end', 'node', 'express', 'java', '.net', 'spring', 'api', 'server'];
@@ -611,13 +613,15 @@ const isCareerAlignedJob = (job, profileOrSearch) => {
   const targetFrontend = hasAny(targetText, ['frontend', 'front-end', 'front end', 'react']);
   const targetData = hasAny(targetText, ['data']);
   const targetMobile = hasAny(targetText, ['mobile', 'flutter', 'android', 'ios']);
-  const jobBackend = hasAny(jobText, backendSignals);
-  const jobFrontend = hasAny(jobText, frontendSignals);
+  const roleBackend = hasAny(jobRoleText, backendSignals);
+  const roleFrontend = hasAny(jobRoleText, frontendSignals);
+  const skillBackend = hasAny(jobSkillsText, backendSignals);
+  const skillFrontend = hasAny(jobSkillsText, frontendSignals);
   const jobData = hasAny(jobText, dataSignals);
   const jobMobile = hasAny(jobText, mobileSignals);
 
-  if (targetBackend) return jobBackend && !jobFrontend;
-  if (targetFrontend) return jobFrontend && !jobBackend;
+  if (targetBackend) return roleBackend || (skillBackend && !roleFrontend);
+  if (targetFrontend) return roleFrontend || (skillFrontend && !roleBackend);
   if (targetData) return jobData;
   if (targetMobile) return jobMobile;
   return true;
