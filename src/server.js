@@ -23,6 +23,7 @@ const dashboardRoutes = require("./modules/dashboard/dashboard.routes");
 const skillsRoutes = require("./modules/skills/skills.routes");
 const aiLogsRoutes = require("./modules/aiLogs/aiLogs.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
+const notificationsRoutes = require("./modules/notifications/notifications.routes");
 const {
   startJobsSyncScheduler,
 } = require("./common/schedulers/jobsSyncScheduler");
@@ -78,6 +79,7 @@ app.use(`${apiPrefix}/dashboard`, dashboardRoutes);
 app.use(`${apiPrefix}/skills`, skillsRoutes);
 app.use(`${apiPrefix}/ai-logs`, aiLogsRoutes);
 app.use(`${apiPrefix}/settings`, settingsRoutes);
+app.use(`${apiPrefix}/notifications`, notificationsRoutes);
 
 app.get("/openapi/rag.json", (req, res) => {
   res.sendFile(

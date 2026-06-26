@@ -8,6 +8,8 @@ const {
   buildJobMatchingMessages,
 } = require('../ai/prompts/jobMatching.prompt');
 const AppError = require('../../common/errors/AppError');
+const logger = require('../../common/utils/logger');
+const notificationsService = require('../notifications/notifications.service');
 
 const MATCH_SELECT = 'id,user_id,job_id,cv_id,match_percentage,matched_skills,missing_skills,ai_reason,generated_by_type,status,created_at,jobs(id,title,company,location,source,source_type,required_skills,employment_type,salary_range,level,category,company_logo_url,apply_url)';
 const DEFAULT_MIN_MATCH_SCORE = 50;
@@ -164,7 +166,35 @@ const generateMatches = async (userId, {
     return saveMatch(userId, job, match, cvId);
   });
 
-  return matches.filter(Boolean).sort((a, b) => b.match_percentage - a.match_percentage);
+  const sorted = matches.filter(Boolean).sort((a, b) => b.match_percentage - a.match_percentage);
+
+  // Best-effort: notify the user about their strongest new match.
+  // One summary notification per generation run to avoid spamming the inbox.
+  const STRONG_MATCH_THRESHOLD = 70;
+  try {
+    const best = sorted[0];
+    if (best && best.match_percentage >= STRONG_MATCH_THRESHOLD && best.jobs) {
+      const company = best.jobs.company ? ` at ${best.jobs.company}` : '';
+      await notificationsService.createUserNotification({
+        userId,
+        type: 'job_match',
+        category: 'job',
+        title: 'Strong job match found',
+        body: `A ${best.jobs.title || 'job'}${company} matches ${best.match_percentage}% of your skills.`,
+        actionLabel: 'View job',
+        actionUrl: `/jobs/${best.job_id}`,
+        metadata: { job_id: best.job_id, match_percentage: best.match_percentage },
+        dedupeKey: `job_match:${best.job_id}`,
+      });
+    }
+  } catch (notifyError) {
+    logger.warn('Failed to create job match notification', {
+      userId,
+      reason: notifyError.message,
+    });
+  }
+
+  return sorted;
 };
 
 const listMatches = async (userId, query = {}) => {

@@ -15,6 +15,7 @@ const {
 } = require('../jobs/jobsPreparation.service');
 const cvParserService = require('./cvParser.service');
 const cvsRepository = require('./cvs.repository');
+const notificationsService = require('../notifications/notifications.service');
 
 const CV_BUCKET_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const PDF_MIME_TYPE = 'application/pdf';
@@ -317,6 +318,27 @@ const analyzeCv = async ({ file, user }) => {
     });
 
     cv = await cvsRepository.updateCv(cv.id, { status: 'completed' });
+
+    // Best-effort: notify the user that their CV analysis is ready.
+    // Never let a notification failure break the CV analysis flow.
+    try {
+      await notificationsService.createUserNotification({
+        userId,
+        type: 'cv_ready',
+        category: 'document',
+        title: 'Your CV analysis is ready',
+        body: `Your CV scored ${normalizedAnalysis.score}/100. See your strengths and suggestions.`,
+        actionLabel: 'View analysis',
+        actionUrl: '/cvs',
+        metadata: { cv_id: cv.id, analysis_id: analysis.id, score: normalizedAnalysis.score },
+        dedupeKey: `cv_ready:${cv.id}`,
+      });
+    } catch (notifyError) {
+      logger.warn('Failed to create CV analysis notification', {
+        cvId: cv.id,
+        reason: notifyError.message,
+      });
+    }
 
     scheduleJobsPreparationForUser({
       userId,

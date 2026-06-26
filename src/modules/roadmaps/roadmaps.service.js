@@ -8,6 +8,7 @@ const {
 const { getRagContextForFeature } = require('../rag/rag.service');
 const { mapCourseSummary } = require('../courses/course.mapper');
 const roadmapsRepository = require('./roadmaps.repository');
+const notificationsService = require('../notifications/notifications.service');
 
 const METADATA_MARKER = '\n\n__pathfinder_roadmap_metadata__:';
 
@@ -782,6 +783,28 @@ const generateRoadmap = async ({ user, forceRegenerate = false }) => {
     forceRegenerate,
   });
   const { roadmap, steps } = await fetchRoadmapWithSteps({ roadmapId, userId });
+
+  // Best-effort: notify the user that their learning roadmap is ready.
+  try {
+    await notificationsService.createUserNotification({
+      userId,
+      type: 'roadmap_ready',
+      category: 'learning',
+      title: 'Your learning roadmap is ready',
+      body: `${roadmap.title || 'Your personalized roadmap'} is ready with ${
+        steps?.length || 0
+      } steps. Start learning now.`,
+      actionLabel: 'View roadmap',
+      actionUrl: `/roadmaps/${roadmapId}`,
+      metadata: { roadmap_id: roadmapId, steps_count: steps?.length || 0 },
+      dedupeKey: `roadmap_ready:${roadmapId}`,
+    });
+  } catch (notifyError) {
+    logger.warn('Failed to create roadmap notification', {
+      roadmapId,
+      reason: notifyError.message,
+    });
+  }
 
   return {
     hasRoadmap: true,

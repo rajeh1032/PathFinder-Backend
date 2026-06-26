@@ -10,6 +10,7 @@ const {
 const ragService = require('../rag/rag.service');
 const { paginateData } = require('../../common/utils/pagination');
 const interviewsRepository = require('./interviews.repository');
+const notificationsService = require('../notifications/notifications.service');
 
 const CACHE_SIMILARITY_THRESHOLD = 0.9;
 const MIN_INTERVIEW_OUTPUT_TOKENS = 4096;
@@ -1672,6 +1673,29 @@ const finishInterviewSession = async ({ user, sessionId }) => {
           : buildFallbackSkillsBreakdown(session.interview_type),
     },
   });
+
+  // Best-effort: notify the user that their interview results are ready.
+  try {
+    const overallScore = Number(evaluation.overall_score) || 0;
+    await notificationsService.createUserNotification({
+      userId,
+      type: 'interview_result',
+      category: 'interview',
+      title: 'Your interview results are ready',
+      body: `You scored ${overallScore}/100 on your ${String(
+        session.interview_type || 'mock',
+      ).replace(/_/g, ' ')} interview. See your feedback.`,
+      actionLabel: 'View results',
+      actionUrl: `/interviews/${session.id}/result`,
+      metadata: { interview_session_id: session.id, overall_score: overallScore },
+      dedupeKey: `interview_result:${session.id}`,
+    });
+  } catch (notifyError) {
+    logger.warn('Failed to create interview result notification', {
+      sessionId: session.id,
+      reason: notifyError.message,
+    });
+  }
 
   return buildInterviewResultPayload(
     {
