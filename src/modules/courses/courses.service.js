@@ -15,6 +15,7 @@ const {
   mapEnrollment,
   mapRecommendationCourse,
 } = require('./course.mapper');
+const notificationsService = require('../notifications/notifications.service');
 
 const METADATA_FETCH_TIMEOUT_MS = 10000;
 const METADATA_MAX_BYTES = 1024 * 1024;
@@ -1115,6 +1116,36 @@ const updateEnrollment = async ({ user, courseId, payload }) => {
     courseId,
     changes: { progress, status, completed_at: completedAt },
   });
+
+  // Best-effort: notify the user when they finish a course (transition only).
+  if (status === 'completed' && existing.status !== 'completed') {
+    try {
+      let courseTitle = 'a course';
+      try {
+        const course = await requireAvailableCourse(courseId);
+        if (course?.title) courseTitle = course.title;
+      } catch (lookupError) {
+        // Course lookup is optional for the notification text.
+      }
+      await notificationsService.createUserNotification({
+        userId,
+        type: 'course_completed',
+        category: 'learning',
+        title: 'Course completed',
+        body: `Great job! You completed ${courseTitle}.`,
+        actionLabel: 'View course',
+        actionUrl: `/courses/${courseId}`,
+        metadata: { course_id: courseId, progress: 100 },
+        dedupeKey: `course_completed:${courseId}`,
+      });
+    } catch (notifyError) {
+      logger.warn('Failed to create course completion notification', {
+        courseId,
+        reason: notifyError.message,
+      });
+    }
+  }
+
   return { courseId, enrollment: mapEnrollment(enrollment) };
 };
 

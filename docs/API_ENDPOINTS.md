@@ -716,6 +716,100 @@ POST /api/v1/cover-letters/generate
 POST /api/v1/jobs/:id/apply
 ```
 
+## Notifications
+
+User-scoped notification inbox and per-user notification settings. All endpoints
+require auth and only ever touch the logged-in user's own rows.
+
+### GET `/api/v1/notifications`
+
+Lists the logged-in user's notifications, newest first, with pagination.
+
+Auth: required
+
+Query params:
+
+```txt
+page=1
+limit=20
+category=job        # job | interview | insight | learning | document
+isRead=false        # filter by read state
+unreadOnly=true     # convenience flag for the bell badge list (forces isRead=false)
+```
+
+Returns `data.notifications` (array), `data.unreadCount` (number), and
+`meta.pagination`. Each notification has:
+
+- `id`, `type`, `category`, `title`, `body`
+- `action_label`, `action_url`
+- `metadata` (object: progress, score, ids, etc.)
+- `is_read`, `read_at`, `created_at`
+
+Used by:
+
+- Notifications screen list
+- Bell badge (via `unreadCount`)
+
+### GET `/api/v1/notifications/unread-count`
+
+Returns just `data.unreadCount`. Cheap call for refreshing the bell badge.
+
+Auth: required
+
+### PATCH `/api/v1/notifications/read-all`
+
+Marks all of the user's unread notifications as read. Returns
+`data.updatedCount`.
+
+Auth: required
+
+### PATCH `/api/v1/notifications/:id/read`
+
+Marks one notification as read. `:id` must belong to the user. Returns the
+updated notification.
+
+Auth: required
+
+### DELETE `/api/v1/notifications/:id`
+
+Dismisses (hard-deletes) one notification owned by the user. Returns the deleted
+`id`.
+
+Auth: required
+
+### GET `/api/v1/notifications/settings`
+
+Returns the user's notification toggles, creating a default row on first access.
+
+Auth: required
+
+Returns `data.settings`:
+
+```txt
+push_enabled
+email_enabled
+job_alerts_enabled
+roadmap_reminders_enabled
+interview_reminders_enabled
+ai_tips_enabled
+```
+
+### PATCH `/api/v1/notifications/settings`
+
+Updates one or more toggles. Body accepts any subset of the boolean fields
+above (at least one required). Returns the full updated `data.settings`.
+
+Auth: required
+
+Body example:
+
+```json
+{
+  "push_enabled": false,
+  "job_alerts_enabled": true
+}
+```
+
 ## Environment Used By These Endpoints
 
 Required for database:
