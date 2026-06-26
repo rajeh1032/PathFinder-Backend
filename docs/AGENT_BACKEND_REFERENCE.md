@@ -42,7 +42,7 @@ Several feature modules are now implemented and mounted in `src/server.js` (`aut
 | `GET` | `/test/error` | `src/modules/test/test.routes.js` | Demonstrates `AppError` and error handler |
 | `POST` | `/api/v1/auth/register` `/login`, `GET /me`, `POST /change-password` | `src/modules/auth/auth.routes.js` | Node-owned JWT auth |
 | `GET`/`PATCH` | `/api/v1/users` (me/list/get/update/activate/deactivate) | `src/modules/users/users.routes.js` | Admin-gated mutations |
-| `POST`/`GET` | `/api/v1/cvs/analyze`, `/me/latest-analysis`, `/me/status` | `src/modules/cvs/cvs.routes.js` | Protected; multipart upload + Gemini analysis |
+| `POST`/`GET` | `/api/v1/cvs/analyze`, `/me/latest-analysis`, `/me/status`, `/me/history`, `/me/:cvId/file-url` | `src/modules/cvs/cvs.routes.js` | Protected; multipart upload + Gemini analysis + user CV file history |
 | `POST`/`GET`/`PATCH`/`DELETE` | `/api/v1/rag/documents...` | `src/modules/rag/rag.routes.js` | RAG document CRUD/upload; auth temporarily bypassed |
 | `POST`/`GET`/`PATCH` | `/api/v1/roadmaps...` | `src/modules/roadmaps/roadmaps.routes.js` | Protected roadmap generation/retrieval/progress |
 | `POST` | `/api/v1/courses/import/preview` | `src/modules/courses/courses.routes.js` | Admin-only MaharaTech import preview with `course_analysis` RAG |

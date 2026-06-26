@@ -21,10 +21,34 @@ const getStatus = asyncHandler(async (req, res) => {
   return sendSuccess(res, result, 'CV status fetched successfully');
 });
 
+const getHistory = asyncHandler(async (req, res) => {
+  const { items, pagination } = await cvsService.getHistory(req.user, req.query);
+
+  return sendSuccess(
+    res,
+    { cvs: items },
+    'CV history fetched successfully',
+    200,
+    { pagination },
+  );
+});
+
+const getFileUrl = asyncHandler(async (req, res) => {
+  const result = await cvsService.getFileUrl(
+    req.user,
+    req.params.cvId,
+    req.query,
+  );
+
+  return sendSuccess(res, result, 'CV file URL created successfully');
+});
+
 module.exports = {
   analyzeCv,
   getLatestAnalysis,
   getStatus,
+  getHistory,
+  getFileUrl,
 };
 
 // ===== Admin CV analyses (read-only) =====

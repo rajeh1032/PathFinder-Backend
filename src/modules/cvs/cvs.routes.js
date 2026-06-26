@@ -3,9 +3,18 @@ const multer = require('multer');
 
 const AppError = require('../../common/errors/AppError');
 const { authenticate } = require('../../common/middlewares/auth.middleware');
-const { validateBody } = require('../../common/middlewares/validate.middleware');
+const {
+  validateBody,
+  validateParams,
+  validateQuery,
+} = require('../../common/middlewares/validate.middleware');
 const cvsController = require('./cvs.controller');
-const { analyzeCvSchema } = require('./cvs.schema');
+const {
+  analyzeCvSchema,
+  cvFileUrlQuerySchema,
+  cvHistoryQuerySchema,
+  cvIdParamSchema,
+} = require('./cvs.schema');
 const { CV_BUCKET_MAX_FILE_SIZE } = require('./cvs.service');
 
 const router = express.Router();
@@ -52,13 +61,25 @@ router.post(
 
 router.get('/me/latest-analysis', authenticate, cvsController.getLatestAnalysis);
 router.get('/me/status', authenticate, cvsController.getStatus);
+router.get(
+  '/me/history',
+  authenticate,
+  validateQuery(cvHistoryQuerySchema),
+  cvsController.getHistory,
+);
+router.get(
+  '/me/:cvId/file-url',
+  authenticate,
+  validateParams(cvIdParamSchema),
+  validateQuery(cvFileUrlQuerySchema),
+  cvsController.getFileUrl,
+);
 
 module.exports = router;
 
 // ===== Admin CV analyses (read-only) =====
 // Registered after the user-scoped routes above so `/me/*` is matched first.
 const { authorize } = require('../../common/middlewares/auth.middleware');
-const { validateParams } = require('../../common/middlewares/validate.middleware');
 const { cvAnalysisIdParamSchema } = require('./cvs.schema');
 
 router.get('/', authenticate, authorize('admin'), cvsController.listCvAnalyses);

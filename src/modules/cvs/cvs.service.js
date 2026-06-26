@@ -3,6 +3,7 @@ const path = require('path');
 
 const AppError = require('../../common/errors/AppError');
 const logger = require('../../common/utils/logger');
+const { buildPaginationMeta } = require('../../common/utils/pagination');
 const {
   CV_ANALYSIS_GEMINI_SCHEMA,
   buildCvAnalysisMessages,
@@ -65,6 +66,34 @@ const serializeCv = (cv) => {
   const safeCv = { ...cv };
   delete safeCv.parsed_text;
   return safeCv;
+};
+
+const pickCvAnalysis = (cv) =>
+  Array.isArray(cv?.cv_analyses) ? cv.cv_analyses[0] : cv?.cv_analyses;
+
+const serializeCvHistoryItem = (cv) => {
+  const analysis = pickCvAnalysis(cv);
+
+  return {
+    id: cv.id,
+    original_name: cv.original_name || null,
+    mime_type: cv.mime_type || null,
+    size_bytes: cv.size_bytes || null,
+    status: cv.status,
+    uploaded_at: cv.uploaded_at,
+    created_at: cv.created_at,
+    updated_at: cv.updated_at,
+    has_file: Boolean(cv.storage_path || cv.file_url),
+    has_analysis: Boolean(analysis),
+    analysis: analysis
+      ? {
+          id: analysis.id,
+          score: analysis.score,
+          status: analysis.status,
+          created_at: analysis.created_at,
+        }
+      : null,
+  };
 };
 
 const normalizeAnalysis = (analysis) => {
@@ -374,16 +403,79 @@ const getStatus = async (user) => {
   };
 };
 
+const getHistory = async (user, query = {}) => {
+  const userId = getAuthenticatedUserId(user);
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+  const status = typeof query.status === 'string' ? query.status.trim() : '';
+
+  const { items, totalItems } = await cvsRepository.findCvHistoryForUser({
+    userId,
+    page,
+    limit,
+    status,
+  });
+
+  return {
+    items: items.map(serializeCvHistoryItem),
+    pagination: buildPaginationMeta({ page, limit, totalItems }),
+  };
+};
+
+const getFileUrl = async (user, cvId, query = {}) => {
+  const userId = getAuthenticatedUserId(user);
+  const expiresIn = Math.min(
+    3600,
+    Math.max(60, Number(query.expiresIn) || 300),
+  );
+  const cv = await cvsRepository.findCvForUserById({ userId, cvId });
+
+  if (!cv) {
+    throw new AppError('CV not found', 404);
+  }
+
+  if (!cv.storage_path) {
+    if (cv.file_url) {
+      return {
+        cv: serializeCvHistoryItem(cv),
+        url: cv.file_url,
+        expiresIn: null,
+        expiresAt: null,
+        source: 'file_url',
+      };
+    }
+
+    throw new AppError('CV file is not available', 404);
+  }
+
+  const signedUrl = await cvsRepository.createCvFileSignedUrl({
+    storagePath: cv.storage_path,
+    expiresIn,
+  });
+
+  if (!signedUrl?.signedUrl) {
+    throw new AppError('CV file URL could not be created', 500);
+  }
+
+  return {
+    cv: serializeCvHistoryItem(cv),
+    url: signedUrl.signedUrl,
+    expiresIn,
+    expiresAt: new Date(Date.now() + expiresIn * 1000).toISOString(),
+    source: 'signed_url',
+  };
+};
+
 module.exports = {
   CV_BUCKET_MAX_FILE_SIZE,
   analyzeCv,
   getLatestAnalysis,
   getStatus,
+  getHistory,
+  getFileUrl,
 };
 
 // ===== Admin CV analyses (read-only) =====
-const { buildPaginationMeta } = require('../../common/utils/pagination');
-
 const ADMIN_CV_ANALYSIS_STATUSES = ['completed', 'failed', 'reviewed'];
 
 const normalizeCvAnalysesQuery = (query = {}) => {

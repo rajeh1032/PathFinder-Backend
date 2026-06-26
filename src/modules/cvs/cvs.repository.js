@@ -263,6 +263,78 @@ const findLatestCvForUser = async (userId) => {
   return data;
 };
 
+const USER_CV_SELECT = `
+  id,
+  user_id,
+  file_url,
+  storage_path,
+  original_name,
+  mime_type,
+  size_bytes,
+  status,
+  uploaded_at,
+  created_at,
+  updated_at,
+  cv_analyses (
+    id,
+    score,
+    status,
+    created_at
+  )
+`;
+
+const findCvHistoryForUser = async ({
+  userId,
+  page = 1,
+  limit = 20,
+  status = '',
+} = {}) => {
+  const client = ensureSupabase();
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  let query = client
+    .from('cvs')
+    .select(USER_CV_SELECT, { count: 'exact' })
+    .eq('user_id', userId);
+
+  if (status) {
+    query = query.eq('status', status);
+  }
+
+  const { data, error, count } = await query
+    .order('uploaded_at', { ascending: false })
+    .order('created_at', { ascending: false })
+    .range(from, to);
+
+  handleSupabaseError(error, 'Failed to fetch CV history');
+
+  return { items: data || [], totalItems: count || 0 };
+};
+
+const findCvForUserById = async ({ userId, cvId }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from('cvs')
+    .select(USER_CV_SELECT)
+    .eq('id', cvId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  handleSupabaseError(error, 'Failed to fetch CV');
+  return data;
+};
+
+const createCvFileSignedUrl = async ({ storagePath, expiresIn }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client.storage
+    .from('cvs')
+    .createSignedUrl(storagePath, expiresIn);
+
+  handleSupabaseError(error, 'Failed to create CV file URL');
+  return data;
+};
+
 module.exports = {
   uploadCvFile,
   deleteCvFile,
@@ -277,6 +349,9 @@ module.exports = {
   upsertUserSkill,
   findLatestCompletedAnalysisForUser,
   findLatestCvForUser,
+  findCvHistoryForUser,
+  findCvForUserById,
+  createCvFileSignedUrl,
 };
 
 // ===== Admin CV analyses (read-only) =====

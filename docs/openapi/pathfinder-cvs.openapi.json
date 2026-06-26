@@ -3,7 +3,7 @@
   "info": {
     "title": "PathFinder CVs API",
     "version": "1.0.0",
-    "description": "Import this file into ApiDog/Swagger to test the PathFinder CV endpoints. Includes admin read endpoints (list and detail of CV analyses) and the user-scoped CV analyze/status endpoints."
+    "description": "Import this file into ApiDog/Swagger to test the PathFinder CV endpoints. Includes admin read endpoints (list and detail of CV analyses) and the user-scoped CV analyze/status/history/file endpoints."
   },
   "servers": [
     {
@@ -18,7 +18,7 @@
     },
     {
       "name": "CVs (User)",
-      "description": "User-scoped CV upload, analysis, and status."
+      "description": "User-scoped CV upload, analysis, status, history, and private file access."
     }
   ],
   "security": [
@@ -160,6 +160,58 @@
           "500": { "$ref": "#/components/responses/InternalServerError" }
         }
       }
+    },
+    "/api/v1/cvs/me/history": {
+      "get": {
+        "tags": ["CVs (User)"],
+        "summary": "List my uploaded CVs",
+        "description": "Returns a paginated list of the authenticated user's uploaded CV metadata and lightweight analysis summary. Does not expose parsed text or storage paths.",
+        "operationId": "getMyCvHistory",
+        "parameters": [
+          { "$ref": "#/components/parameters/Page" },
+          { "$ref": "#/components/parameters/Limit" },
+          { "$ref": "#/components/parameters/CvUploadStatusFilter" }
+        ],
+        "responses": {
+          "200": {
+            "description": "CV history fetched successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvHistorySuccessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
+    },
+    "/api/v1/cvs/me/{cvId}/file-url": {
+      "get": {
+        "tags": ["CVs (User)"],
+        "summary": "Create a signed URL for one of my CV files",
+        "description": "Validates CV ownership, then returns a temporary signed URL for the private Supabase Storage object. If an older row has only file_url and no storage_path, the stored file_url is returned.",
+        "operationId": "getMyCvFileUrl",
+        "parameters": [
+          { "$ref": "#/components/parameters/CvId" },
+          { "$ref": "#/components/parameters/ExpiresIn" }
+        ],
+        "responses": {
+          "200": {
+            "description": "CV file URL created successfully",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CvFileUrlSuccessResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ValidationError" },
+          "401": { "$ref": "#/components/responses/UnauthorizedError" },
+          "404": { "$ref": "#/components/responses/NotFoundError" },
+          "500": { "$ref": "#/components/responses/InternalServerError" }
+        }
+      }
     }
   },
   "components": {
@@ -195,6 +247,14 @@
         "schema": { "$ref": "#/components/schemas/CvAnalysisStatus" },
         "example": "completed"
       },
+      "CvUploadStatusFilter": {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "description": "Filter by CV upload/analysis lifecycle status.",
+        "schema": { "$ref": "#/components/schemas/CvUploadStatus" },
+        "example": "completed"
+      },
       "CvAnalysisId": {
         "name": "id",
         "in": "path",
@@ -202,9 +262,30 @@
         "description": "CV analysis UUID.",
         "schema": { "type": "string", "format": "uuid" },
         "example": "3f1a2b6c-9d4e-4f8a-9c2b-7e1d5a6b3c8f"
+      },
+      "CvId": {
+        "name": "cvId",
+        "in": "path",
+        "required": true,
+        "description": "CV UUID owned by the authenticated user.",
+        "schema": { "type": "string", "format": "uuid" },
+        "example": "8b3d7d7d-189d-4ed3-a4db-4e64f211e923"
+      },
+      "ExpiresIn": {
+        "name": "expiresIn",
+        "in": "query",
+        "required": false,
+        "description": "Signed URL lifetime in seconds. Allowed range: 60-3600.",
+        "schema": { "type": "integer", "minimum": 60, "maximum": 3600, "default": 300 },
+        "example": 300
       }
     },
     "schemas": {
+      "CvUploadStatus": {
+        "type": "string",
+        "enum": ["uploaded", "parsing", "analyzing", "completed", "failed"],
+        "description": "cvs.status (cv_status enum)."
+      },
       "CvAnalysisStatus": {
         "type": "string",
         "enum": ["completed", "failed", "reviewed"],
@@ -277,6 +358,68 @@
           "hasPreviousPage": { "type": "boolean", "example": false },
           "nextPage": { "type": "integer", "nullable": true, "example": 2 },
           "previousPage": { "type": "integer", "nullable": true, "example": null }
+        }
+      },
+      "CvHistoryAnalysisSummary": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "score": { "type": "integer", "minimum": 0, "maximum": 100, "nullable": true, "example": 86 },
+          "status": { "$ref": "#/components/schemas/CvAnalysisStatus" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CvHistoryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "original_name": { "type": "string", "nullable": true, "example": "Ahmed Flutter CV.pdf" },
+          "mime_type": { "type": "string", "nullable": true, "example": "application/pdf" },
+          "size_bytes": { "type": "integer", "nullable": true, "example": 184320 },
+          "status": { "$ref": "#/components/schemas/CvUploadStatus" },
+          "uploaded_at": { "type": "string", "format": "date-time" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "has_file": { "type": "boolean", "example": true },
+          "has_analysis": { "type": "boolean", "example": true },
+          "analysis": { "$ref": "#/components/schemas/CvHistoryAnalysisSummary" }
+        }
+      },
+      "CvHistorySuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV history fetched successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "cvs": { "type": "array", "items": { "$ref": "#/components/schemas/CvHistoryItem" } }
+            }
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "pagination": { "$ref": "#/components/schemas/Pagination" }
+            }
+          }
+        }
+      },
+      "CvFileUrlSuccessResponse": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "message": { "type": "string", "example": "CV file URL created successfully" },
+          "data": {
+            "type": "object",
+            "properties": {
+              "cv": { "$ref": "#/components/schemas/CvHistoryItem" },
+              "url": { "type": "string", "format": "uri" },
+              "expiresIn": { "type": "integer", "nullable": true, "example": 300 },
+              "expiresAt": { "type": "string", "format": "date-time", "nullable": true },
+              "source": { "type": "string", "enum": ["signed_url", "file_url"], "example": "signed_url" }
+            }
+          }
         }
       },
       "CvAnalysisListSuccessResponse": {
