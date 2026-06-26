@@ -11,15 +11,15 @@ const toPositiveInt = (value, fallback) => {
 
 const getPreparationConfig = () => ({
   maxItems: Math.min(
-    20,
+    30,
     toPositiveInt(
       process.env.USER_JOBS_SYNC_MAX_ITEMS,
-      toPositiveInt(process.env.JOBS_SYNC_MAX_ITEMS, toPositiveInt(process.env.APIFY_MAX_ITEMS, 5)),
+      toPositiveInt(process.env.JOBS_SYNC_MAX_ITEMS, toPositiveInt(process.env.APIFY_MAX_ITEMS, 30)),
     ),
   ),
   matchLimit: Math.min(
     100,
-    toPositiveInt(process.env.USER_JOB_MATCHES_LIMIT, 20),
+    toPositiveInt(process.env.USER_JOB_MATCHES_LIMIT, 30),
   ),
   matchConcurrency: Math.min(
     5,
@@ -36,7 +36,7 @@ const buildSearchFromProfile = (profile) => {
   };
 };
 
-const hasPublishedJobsForSearch = async ({ search, location }) => {
+const hasPublishedJobsForSearch = async ({ search, location, minCount = 1 }) => {
   const result = await jobsRepository.listJobs({
     keyword: search,
     location,
@@ -46,7 +46,7 @@ const hasPublishedJobsForSearch = async ({ search, location }) => {
     limit: 1,
   });
 
-  if (result.jobs.length) return true;
+  if (result.pagination.totalItems >= minCount) return true;
 
   const fallbackResult = await jobsRepository.listJobs({
     keyword: search,
@@ -56,19 +56,22 @@ const hasPublishedJobsForSearch = async ({ search, location }) => {
     limit: 1,
   });
 
-  return fallbackResult.jobs.length > 0;
+  return fallbackResult.pagination.totalItems >= minCount;
 };
 
 const prepareJobsForUser = async ({
   userId,
   reason = 'manual',
   syncIfEmpty = true,
+  forceSync = false,
   generateMatches = true,
   matchLimit,
+  syncMaxItems,
 } = {}) => {
   if (!userId) return { skipped: true, reason: 'missing_user_id' };
 
   const config = getPreparationConfig();
+  const requestedMaxItems = Math.min(30, toPositiveInt(syncMaxItems, config.maxItems));
   const profile = await jobsRepository.getUserProfile(userId);
   const searchContext = buildSearchFromProfile(profile);
   const summary = {
@@ -81,7 +84,10 @@ const prepareJobsForUser = async ({
   };
 
   if (syncIfEmpty) {
-    const hasJobs = await hasPublishedJobsForSearch(searchContext);
+    const hasJobs = forceSync ? false : await hasPublishedJobsForSearch({
+      ...searchContext,
+      minCount: requestedMaxItems,
+    });
 
     if (!hasJobs) {
       try {
@@ -89,7 +95,7 @@ const prepareJobsForUser = async ({
         summary.sync = await jobsService.syncJobsFromApify({
           userId,
           ...searchContext,
-          maxItems: config.maxItems,
+          maxItems: requestedMaxItems,
           allowFallback: false,
         });
       } catch (error) {
@@ -102,7 +108,7 @@ const prepareJobsForUser = async ({
         logger.warn('User jobs sync failed during preparation', summary.sync);
       }
     } else {
-      summary.sync = { skipped: true, reason: 'matching_jobs_already_exist' };
+      summary.sync = { skipped: true, reason: 'enough_matching_jobs_already_exist' };
     }
   }
 
@@ -112,7 +118,6 @@ const prepareJobsForUser = async ({
       summary.matches = await jobMatchesService.generateMatches(userId, {
         limit: Math.min(100, toPositiveInt(matchLimit, config.matchLimit)),
         concurrency: config.matchConcurrency,
-        keyword: searchContext.search,
         location: searchContext.location,
       });
     } catch (error) {

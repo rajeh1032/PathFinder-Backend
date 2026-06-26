@@ -1,4 +1,4 @@
-﻿const Joi = require('joi');
+const Joi = require('joi');
 const uuidParamSchema = Joi.object({ id: Joi.string().uuid().required() });
 const generateJobMatchesSchema = Joi.object({
   userId: Joi.string().uuid(),
@@ -20,4 +20,12 @@ const listJobMatchesQuerySchema = Joi.object({
   includeFallback: Joi.boolean().truthy('true').falsy('false').default(false),
   includeManual: Joi.boolean().truthy('true').falsy('false').default(false),
 });
-module.exports = { uuidParamSchema, generateJobMatchesSchema, listJobMatchesQuerySchema };
+const listAdminJobMatchesQuerySchema = Joi.object({
+  userId: Joi.string().uuid(),
+  status: Joi.string().trim().max(40),
+  generatedByType: Joi.string().valid('ai', 'system'),
+  minScore: Joi.number().integer().min(0).max(100).default(0),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(100).default(20),
+});
+module.exports = { uuidParamSchema, generateJobMatchesSchema, listJobMatchesQuerySchema, listAdminJobMatchesQuerySchema };

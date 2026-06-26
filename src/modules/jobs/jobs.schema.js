@@ -19,13 +19,16 @@ const listJobsQuerySchema = Joi.object({
   includeWeak: Joi.boolean().truthy('true').falsy('false').default(false),
   includeFallback: Joi.boolean().truthy('true').falsy('false').default(false),
   includeManual: Joi.boolean().truthy('true').falsy('false').default(false),
+  autoSync: Joi.boolean().truthy('true').falsy('false').default(true),
+  forceSync: Joi.boolean().truthy('true').falsy('false').default(false),
+  concurrency: Joi.number().integer().min(1).max(5),
 });
 
 const syncJobsSchema = Joi.object({
   userId: Joi.string().uuid(),
   search: Joi.string().trim().max(160),
   location: Joi.string().trim().max(120),
-  maxItems: Joi.number().integer().min(1).max(20),
+  maxItems: Joi.number().integer().min(1).max(30),
   maxRunCostUsd: Joi.number().min(0.01).max(1),
   allowFallback: Joi.boolean().truthy('true').falsy('false').default(false),
   input: Joi.object().unknown(true),

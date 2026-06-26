@@ -1,7 +1,6 @@
 ﻿const axios = require('axios');
 const AppError = require('../../common/errors/AppError');
 const jobsRepository = require('./jobs.repository');
-const { prepareJobsForUser } = require('./jobsPreparation.service');
 
 const SYNCED_JOB_SOURCE = 'apify_linkedin';
 const SYNCED_JOB_SOURCE_TYPE = 'linkedin';
@@ -431,6 +430,11 @@ const matchesSearch = (item, search) => {
   const backendSignal = ['backend', 'back-end', 'back end', 'server-side', 'node.js', 'nodejs', 'rails', 'django'].some((token) => titleAndCategory.includes(token));
   const looksLikeNonSoftwareEngineering = nonSoftwareEngineeringTokens.some((token) => haystack.includes(token));
   const hasTechSignal = [...techTokens].some((token) => titleAndCategory.includes(token));
+  const hasRoleSignal = expectsFrontend
+    ? frontendSignal
+    : expectsBackend
+      ? backendSignal
+      : false;
 
   if (expectsTechRole && looksLikeNonSoftwareEngineering && !hasTechSignal) {
     return false;
@@ -451,7 +455,9 @@ const matchesSearch = (item, search) => {
   if (specificTokens.length) {
     const titleSpecificMatch = specificTokens.some((token) => titleAndCategory.includes(token));
     const descriptionSpecificMatch = specificTokens.some((token) => description.includes(token));
-    const roleSpecificMatch = expectsFrontend || expectsBackend ? titleSpecificMatch : descriptionSpecificMatch;
+    const roleSpecificMatch = expectsFrontend || expectsBackend
+      ? hasRoleSignal || titleSpecificMatch
+      : descriptionSpecificMatch;
     return titleSpecificMatch || roleSpecificMatch || (genericMatchesTitle && (!expectsTechRole || hasTechSignal));
   }
 
@@ -533,7 +539,7 @@ const syncJobsFromApify = async ({ userId, search, location, maxItems, input, al
   if (!token || !actorId) throw new AppError('Apify token and actor id are required', 500);
 
   const context = await buildSearchContext({ userId, search, location });
-  const hardMaxItems = Math.min(20, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 5));
+  const hardMaxItems = Math.min(30, Math.max(1, Number(process.env.APIFY_HARD_MAX_ITEMS) || 30));
   const safeMaxItems = Math.min(hardMaxItems, Math.max(1, Number(maxItems || process.env.APIFY_MAX_ITEMS) || hardMaxItems));
   const maxRunCostUsd = Math.max(0.01, Number(process.env.APIFY_MAX_RUN_COST_USD) || 0.05);
   const actorInput = buildApifyInput({ ...context, maxItems: safeMaxItems, input });
@@ -590,10 +596,48 @@ const getJobSkills = (job) => {
 };
 
 const DEFAULT_MIN_MATCH_SCORE = 50;
+const MATCHED_JOBS_CACHE_TTL_HOURS = Math.max(
+  1,
+  Number(process.env.USER_MATCHED_JOBS_CACHE_TTL_HOURS || process.env.JOBS_SYNC_INTERVAL_HOURS) || 12,
+);
 
 const includeManualJobs = (value) => value === true || value === 'true';
 const isSyncedJob = (job) =>
   job?.source === SYNCED_JOB_SOURCE || job?.source_type === SYNCED_JOB_SOURCE_TYPE;
+const isTruthy = (value) => value === true || value === 'true';
+const isFalsey = (value) => value === false || value === 'false';
+const hasAny = (text, tokens) => tokens.some((token) => text.includes(token));
+const isCareerAlignedJob = (job, profileOrSearch) => {
+  const target = typeof profileOrSearch === 'string'
+    ? profileOrSearch
+    : `${profileOrSearch?.career_paths?.title || ''} ${profileOrSearch?.career_paths?.category || ''} ${profileOrSearch?.headline || ''}`;
+  const targetText = String(target || '').toLowerCase();
+  const jobRoleText = `${job?.title || ''} ${job?.category || ''}`.toLowerCase();
+  const jobSkillsText = asArray(job?.required_skills).join(' ').toLowerCase();
+  const jobText = `${jobRoleText} ${jobSkillsText}`;
+
+  const frontendSignals = ['frontend', 'front-end', 'front end', 'react', 'angular', 'vue', 'ui developer'];
+  const backendSignals = ['backend', 'back-end', 'back end', 'node', 'express', 'java', '.net', 'spring', 'api', 'server'];
+  const dataSignals = ['data analyst', 'data analysis', 'data engineer', 'analytics', 'business intelligence'];
+  const mobileSignals = ['mobile', 'flutter', 'android', 'ios', 'react native'];
+
+  const targetBackend = hasAny(targetText, ['backend', 'back-end', 'back end', 'node']);
+  const targetFrontend = hasAny(targetText, ['frontend', 'front-end', 'front end', 'react']);
+  const targetData = hasAny(targetText, ['data']);
+  const targetMobile = hasAny(targetText, ['mobile', 'flutter', 'android', 'ios']);
+  const roleBackend = hasAny(jobRoleText, backendSignals);
+  const roleFrontend = hasAny(jobRoleText, frontendSignals);
+  const skillBackend = hasAny(jobSkillsText, backendSignals);
+  const skillFrontend = hasAny(jobSkillsText, frontendSignals);
+  const jobData = hasAny(jobText, dataSignals);
+  const jobMobile = hasAny(jobText, mobileSignals);
+
+  if (targetBackend) return roleBackend || (skillBackend && !roleFrontend);
+  if (targetFrontend) return roleFrontend || (skillFrontend && !roleBackend);
+  if (targetData) return jobData;
+  if (targetMobile) return jobMobile;
+  return true;
+};
 
 const jobFromStoredMatch = (match) => {
   const { jobs: job } = match;
@@ -688,7 +732,12 @@ const getJobById = async (id) => {
 };
 
 const listMatchedJobs = async ({ userId, ...filters }) => {
-  let result = await jobsRepository.listStoredMatchedJobs(userId, filters);
+  const profile = await jobsRepository.getUserProfile(userId);
+  const requestedLimit = Math.min(30, Math.max(1, Number(filters.limit) || 20));
+  const repositoryFilters = {
+    ...filters,
+    limit: Math.min(100, Math.max(requestedLimit * 3, requestedLimit)),
+  };
   const buildJobs = (matches) => {
     const seenJobs = new Set();
     return matches
@@ -698,26 +747,99 @@ const listMatchedJobs = async ({ userId, ...filters }) => {
         if (!includeManualJobs(filters.includeManual) && !isSyncedJob(job)) {
           return false;
         }
+        if (!isCareerAlignedJob(job, profile)) return false;
         seenJobs.add(job.id);
         return true;
-      });
+      })
+      .slice(0, requestedLimit);
   };
-  let jobs = buildJobs(result.matches);
+  const cachedResult = await jobsRepository.listStoredMatchedJobs(userId, repositoryFilters);
+  const cachedJobs = buildJobs(cachedResult.matches);
+  const latestCachedAt = cachedResult.matches
+    .map((match) => new Date(match.created_at).getTime())
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[0] || 0;
+  const cacheAgeMs = latestCachedAt ? Date.now() - latestCachedAt : Infinity;
+  const cacheTtlMs = MATCHED_JOBS_CACHE_TTL_HOURS * 60 * 60 * 1000;
+  const cacheFresh = cachedJobs.length > 0 && cacheAgeMs < cacheTtlMs;
+  const shouldUseCache = !isTruthy(filters.forceSync) && (cacheFresh || isFalsey(filters.autoSync));
 
-  if (!jobs.length && filters.autoPrepare !== 'false') {
-    await prepareJobsForUser({
-      userId,
-      reason: 'matched_jobs_empty',
-      syncIfEmpty: true,
-      generateMatches: true,
-      matchLimit: filters.limit,
-    });
-
-    result = await jobsRepository.listStoredMatchedJobs(userId, filters);
-    jobs = buildJobs(result.matches);
+  if (shouldUseCache) {
+    return {
+      jobs: cachedJobs,
+      pagination: { ...cachedResult.pagination, totalItems: cachedJobs.length },
+      sync: {
+        skipped: true,
+        reason: cacheFresh ? 'cached_matches_are_fresh' : 'auto_sync_disabled',
+        cacheAgeHours: Number.isFinite(cacheAgeMs) ? Number((cacheAgeMs / 60 / 60 / 1000).toFixed(2)) : null,
+        cacheTtlHours: MATCHED_JOBS_CACHE_TTL_HOURS,
+      },
+    };
   }
 
-  return { jobs, pagination: { ...result.pagination, totalItems: jobs.length } };
+  let syncResult;
+  try {
+    syncResult = await syncJobsFromApify({
+      userId,
+      maxItems: requestedLimit,
+      allowFallback: filters.includeFallback === true || filters.includeFallback === 'true',
+    });
+  } catch (error) {
+    if (cachedJobs.length) {
+      return {
+        jobs: cachedJobs,
+        pagination: { ...cachedResult.pagination, totalItems: cachedJobs.length },
+        sync: {
+          failed: true,
+          fallbackToCache: true,
+          message: error.message,
+          cacheAgeHours: Number.isFinite(cacheAgeMs) ? Number((cacheAgeMs / 60 / 60 / 1000).toFixed(2)) : null,
+          cacheTtlHours: MATCHED_JOBS_CACHE_TTL_HOURS,
+        },
+      };
+    }
+    throw error;
+  }
+  const syncedJobs = (syncResult.jobs || [])
+    .filter((job) => isCareerAlignedJob(job, profile))
+    .slice(0, requestedLimit);
+  const jobMatchesService = require('../jobMatches/jobMatches.service');
+  const matches = syncedJobs.length
+    ? await jobMatchesService.generateMatches(userId, {
+      jobIds: syncedJobs.map((job) => job.id),
+      limit: requestedLimit,
+      concurrency: Math.min(5, Math.max(1, Number(filters.concurrency) || 2)),
+    })
+    : [];
+  const jobs = buildJobs(matches);
+
+  return {
+    jobs,
+    pagination: {
+      page: 1,
+      limit: requestedLimit,
+      totalItems: jobs.length,
+      totalPages: 1,
+      hasNextPage: false,
+      hasPreviousPage: false,
+    },
+    sync: {
+      search: syncResult.search,
+      location: syncResult.location,
+      requestedMaxItems: syncResult.requestedMaxItems,
+      effectiveMaxItems: syncResult.effectiveMaxItems,
+      fetchedCount: syncResult.fetchedCount,
+      matchedInputCount: syncResult.matchedInputCount,
+      savedCount: syncResult.savedCount,
+    },
+  };
 };
 
-module.exports = { listJobs, getJobById, listMatchedJobs, syncJobsFromApify, calculateJobMatch };
+module.exports = {
+  listJobs,
+  getJobById,
+  listMatchedJobs,
+  syncJobsFromApify,
+  calculateJobMatch,
+  isCareerAlignedJob,
+};

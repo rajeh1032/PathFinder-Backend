@@ -12,6 +12,7 @@ const updateMyProfile = asyncHandler(async (req, res) => {
   const result = await profilesService.updateMyProfile({
     user: req.user,
     body: req.body,
+    file: req.file,
   });
 
   return sendSuccess(res, result, 'Profile updated successfully');

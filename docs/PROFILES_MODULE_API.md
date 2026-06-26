@@ -43,8 +43,20 @@ const String kProfilesBase = '$kApiBaseUrl/profiles';
 
 ---
 
-## 3. Authentication
+## 2.1 Supabase Storage (avatars)
 
+Profile avatars uploaded via `PATCH /me` are stored in the Supabase Storage bucket **`profile-images`**.
+
+- The bucket must exist. Create it in the Supabase dashboard (Storage → New bucket → name `profile-images`).
+- For `avatar_url` to be directly usable by the Flutter `Image.network(...)` widget, the bucket should be **public** (the backend returns the public URL via `getPublicUrl`). If you keep it private, switch the backend to signed URLs.
+- Files are stored under `profile-images/<userId>/<timestamp>-<uuid>.<ext>`.
+- Replacing an avatar deletes the previous file automatically.
+
+---
+
+---
+
+## 3. Authentication
 - Auth is **backend-owned JWT** (not Supabase Auth).
 - Get a token from `POST /api/v1/auth/login` or `POST /api/v1/auth/register` (returns an `accessToken`).
 - Send it on every profiles request (all endpoints require auth **except** `GET /me/careerPahts`):
@@ -250,22 +262,25 @@ All ids are UUID strings. Timestamps are ISO 8601 strings. Dates are `YYYY-MM-DD
 ### 7.2 PATCH `/me` — Update my profile
 
 - **Auth:** required
-- **Body:** at least **one** field. Unknown fields are stripped.
+- **Content types:** accepts **either** `application/json` (fields only) **or** `multipart/form-data` (fields + optional image).
+- **Avatar upload:** send the image in a multipart field named **`avatar`**. Allowed types: JPG, PNG, WEBP, GIF. Max size: **5MB**. The backend uploads it to the Supabase Storage bucket **`profile-images`** and sets `avatar_url` (public URL) and `avatar_storage_path` automatically. Any previous avatar is replaced and the old file is deleted.
+- **Body:** all fields optional, but the request must contain **at least one field OR an `avatar` file**. Unknown fields are stripped.
 
 | Field | Type | Rules |
 | --- | --- | --- |
+| `avatar` | file (multipart) | optional image; JPG/PNG/WEBP/GIF, ≤ 5MB. Sets `avatar_url` + `avatar_storage_path` |
 | `headline` | string | max 200; `null`/`""` allowed |
 | `bio` | string | max 3000; `null`/`""` allowed |
 | `location` | string | max 160; `null`/`""` allowed |
 | `university` | string | max 200; `null`/`""` allowed |
 | `major` | string | max 200; `null`/`""` allowed |
-| `avatar_url` | string | valid URI, max 500; `null`/`""` allowed |
+| `avatar_url` | string | valid URI, max 500; `null`/`""` allowed. **Ignored/overridden when an `avatar` file is uploaded** |
 | `education_level_id` | string (uuid) | `null` allowed |
 | `current_status_id` | string (uuid) | `null` allowed |
 | `experience_year_id` | string (uuid) | `null` allowed |
 | `target_career_id` | string (uuid) | `null` allowed |
 
-- **Request example:**
+- **JSON request example (no image):**
 
 ```json
 {
@@ -276,8 +291,26 @@ All ids are UUID strings. Timestamps are ISO 8601 strings. Dates are `YYYY-MM-DD
 }
 ```
 
-- **Success 200:** `{ "data": { "profile": { ...updated profile... } } }`
-- **Errors:** `400` validation (e.g. empty body, invalid uuid, bad URI), `401`, `404` profile not found.
+- **Multipart request example (image + fields):**
+
+```
+PATCH /api/v1/profiles/me
+Authorization: Bearer <token>
+Content-Type: multipart/form-data; boundary=...
+
+--...
+Content-Disposition: form-data; name="avatar"; filename="me.jpg"
+Content-Type: image/jpeg
+<binary image bytes>
+--...
+Content-Disposition: form-data; name="headline"
+
+Backend Developer
+--...--
+```
+
+- **Success 200:** `{ "data": { "profile": { ...updated profile, with new avatar_url... } } }`
+- **Errors:** `400` validation / empty update, `401`, `404` profile not found, `413` image too large, `415` unsupported image type.
 
 ---
 
@@ -721,6 +754,8 @@ Map<String, dynamic> _unwrap(http.Response res) {
 ```dart
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+// For multipart avatar uploads:
+import 'package:http_parser/http_parser.dart'; // MediaType
 
 class ProfilesApi {
   ProfilesApi({required this.baseUrl, required this.tokenProvider});
@@ -746,6 +781,41 @@ class ProfilesApi {
   Future<Profile> updateMyProfile(Map<String, dynamic> changes) async {
     final res = await http.patch(Uri.parse('$baseUrl/me'),
         headers: _headers, body: jsonEncode(changes));
+    final body = _unwrap(res);
+    return Profile.fromJson(body['data']['profile']);
+  }
+
+  /// Update the profile and/or upload an avatar image (multipart).
+  /// [imagePath] is a local file path (e.g. from image_picker). Text [changes]
+  /// are sent as multipart fields. Pass only an image, only fields, or both.
+  Future<Profile> updateMyProfileWithImage({
+    Map<String, String> changes = const {},
+    String? imagePath,
+  }) async {
+    final req = http.MultipartRequest('PATCH', Uri.parse('$baseUrl/me'));
+    if (tokenProvider() != null) {
+      req.headers['Authorization'] = 'Bearer ${tokenProvider()}';
+    }
+    changes.forEach((k, v) => req.fields[k] = v);
+    if (imagePath != null) {
+      // Field name MUST be 'avatar'. Set contentType explicitly so the server's
+      // MIME filter accepts it (http defaults to application/octet-stream).
+      final ext = imagePath.split('.').last.toLowerCase();
+      const mimeByExt = {
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'png': 'image/png',
+        'webp': 'image/webp',
+        'gif': 'image/gif',
+      };
+      req.files.add(await http.MultipartFile.fromPath(
+        'avatar',
+        imagePath,
+        contentType: MediaType.parse(mimeByExt[ext] ?? 'image/jpeg'),
+      ));
+    }
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
     final body = _unwrap(res);
     return Profile.fromJson(body['data']['profile']);
   }
@@ -844,6 +914,14 @@ final updated = await api.updateMyProfile({
   'target_career_id': selectedCareerPathId,
 });
 
+// Update profile WITH an avatar image (e.g. from image_picker)
+// final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+final withAvatar = await api.updateMyProfileWithImage(
+  changes: {'headline': 'Backend Developer'}, // optional text fields (strings)
+  imagePath: picked.path,                      // local image path
+);
+// withAvatar.avatarUrl now points to the public Supabase Storage URL
+
 // Add an experience (omit end_date when is_current is true)
 final exp = await api.createExperience({
   'job_title': 'Backend Intern',
@@ -877,6 +955,8 @@ try {
 - [ ] For experiences, do not send `end_date` when `is_current = true`.
 - [ ] Use `getCareerPaths()` to populate the target-career dropdown bound to `target_career_id`.
 - [ ] PATCH endpoints require **at least one** field; sending `{}` returns `400`.
+- [ ] To upload an avatar, send `multipart/form-data` with the image in the **`avatar`** field (JPG/PNG/WEBP/GIF, ≤ 5MB); the server fills `avatar_url`. Add `http_parser` to `pubspec.yaml` for `MediaType`.
+- [ ] Ensure the Supabase **`profile-images`** bucket exists and is public so `avatar_url` renders in `Image.network`.
 - [ ] Surface `error.details[].message` in forms for inline validation feedback.
 
 ---
