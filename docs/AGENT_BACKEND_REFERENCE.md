@@ -12,7 +12,7 @@ Expected flow:
 routes -> controllers -> services -> repositories -> Supabase
 ```
 
-Several feature modules are now implemented and mounted in `src/server.js` (`auth`, `users`, `cvs`, `rag`, `roadmaps`, `courses`, `interviews`, `chat`, and the `test` diagnostics), plus the shared `ai` Gemini support module. The remaining product modules (`appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `notifications`, `profiles`, `savedJobs`, `skills`) are still empty placeholders. AI is powered by Google Gemini (`src/config/gemini.js`), not OpenAI.
+Several feature modules are now implemented and mounted in `src/server.js` (`auth`, `users`, `cvs`, `rag`, `roadmaps`, `courses`, `interviews`, `chat`, `notifications`, and the `test` diagnostics), plus the shared `ai` Gemini support module. The remaining product modules (`appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `profiles`, `savedJobs`, `skills`) are still empty placeholders. AI is powered by Google Gemini (`src/config/gemini.js`), not OpenAI.
 
 ## Docs Read
 
@@ -67,7 +67,7 @@ The `/api/v1` prefix is mounted for implemented product modules.
 | `interviews` | Implemented career paths + session generation with caching | `interview_sessions`, `interview_questions`, `career_paths` |
 | `jobMatches` | Empty | `job_matches` |
 | `jobs` | Empty files including repository/schema | `jobs` |
-| `notifications` | Empty | `notification_settings` |
+| `notifications` | Implemented inbox, settings, and FCM delivery | `notifications`, `notification_settings`, `device_tokens` |
 | `profiles` | Empty files including repository/schema | profile-related tables |
 | `rag` | Implemented document CRUD/upload (auth bypassed) | `rag_documents`, `rag_chunks` |
 | `roadmaps` | Implemented generate/retrieve/progress | `roadmaps`, `roadmap_steps` |
@@ -80,7 +80,7 @@ See `.agents/skills/pathfinder-backend-engineer/references/module-map.md` for de
 
 ## Database Overview
 
-The schema has 43 public tables covering:
+The schema has 45 public tables covering:
 
 - Auth/users/roles.
 - Profiles, experiences, education, preferences, achievements.

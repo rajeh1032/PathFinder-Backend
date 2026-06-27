@@ -3,24 +3,30 @@ const logger = require("../common/utils/logger");
 
 const projectId = process.env.FIREBASE_PROJECT_ID;
 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-// Private keys stored in .env keep their newlines escaped as "\n".
 const privateKey = process.env.FIREBASE_PRIVATE_KEY
   ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
   : undefined;
+const useApplicationDefaultCredentials =
+  process.env.FIREBASE_USE_ADC === "true";
 
-const isConfigured = Boolean(projectId && clientEmail && privateKey);
+const isConfigured = Boolean(
+  projectId &&
+    ((clientEmail && privateKey) || useApplicationDefaultCredentials),
+);
 
 let messaging = null;
 
 if (isConfigured) {
   try {
     if (!admin.apps.length) {
+      const credential =
+        clientEmail && privateKey
+          ? admin.credential.cert({ projectId, clientEmail, privateKey })
+          : admin.credential.applicationDefault();
+
       admin.initializeApp({
-        credential: admin.credential.cert({
-          projectId,
-          clientEmail,
-          privateKey,
-        }),
+        credential,
+        projectId,
       });
     }
     messaging = admin.messaging();
@@ -33,7 +39,7 @@ if (isConfigured) {
   }
 } else {
   logger.warn(
-    "Firebase Admin not configured; push notifications are disabled",
+    "Firebase Admin not configured; set service-account variables or enable ADC",
   );
 }
 

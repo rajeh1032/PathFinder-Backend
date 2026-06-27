@@ -8,7 +8,7 @@ PathFinder AI is an AI career mentor backend for students, fresh graduates, ITI 
 
 The repository is currently a Node.js/Express CommonJS backend with a modular folder structure under `src/modules`. Several feature modules are now implemented, while others are still scaffolded as empty files.
 
-Implemented and mounted in `src/server.js`: `auth`, `users`, `cvs`, `rag`, `roadmaps`, `courses`, `interviews`, `chat`, and the `test` diagnostic module. The shared `ai` module (Gemini wrapper) is implemented as a support module but exposes no routes. Still empty (0-byte scaffolds): `appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `notifications`, `profiles`, `savedJobs`, `skills`.
+Implemented and mounted in `src/server.js`: `auth`, `users`, `cvs`, `rag`, `roadmaps`, `courses`, `interviews`, `chat`, `notifications`, and the `test` diagnostic module. The shared `ai` module (Gemini wrapper) is implemented as a support module but exposes no routes. Still empty (0-byte scaffolds): `appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `profiles`, `savedJobs`, `skills`.
 
 ## Tech Stack Detected
 
@@ -158,7 +158,7 @@ For paginated lists, use `sendPaginated` and `pagination` metadata from `src/com
 - Use Supabase Storage for binary files only. Store metadata and storage paths in database rows.
 - Use service-role Supabase clients only on the backend.
 - Keep schema changes in Supabase migrations and verify against local/remote Supabase when credentials are available.
-- The current migrations and database schema docs agree on 43 public tables.
+- The current migrations and database schema docs agree on 45 public tables.
 
 ## AI Integration Rules
 
@@ -178,7 +178,7 @@ For paginated lists, use `sendPaginated` and `pagination` metadata from `src/com
 
 ## Environment Variable Rules
 
-No `.env.example` exists in the repo at inspection time. `.env` was inspected for variable names only.
+Use `.env.example` as the safe variable-name reference. Never add real values.
 
 Detected env names:
 
@@ -201,6 +201,10 @@ Detected env names:
 - `STORAGE_PUBLIC_BASE_URL`
 - `JWT_SECRET`
 - `JWT_EXPIRES_IN`
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CLIENT_EMAIL`
+- `FIREBASE_PRIVATE_KEY`
+- `FIREBASE_USE_ADC`
 
 The previously documented `OPENAI_*` variables are no longer present in `.env` and are no longer used by the code.
 

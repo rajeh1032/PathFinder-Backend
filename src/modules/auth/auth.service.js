@@ -5,6 +5,8 @@ const { generateToken } = require('../../common/utils/token.js');
 const {
   scheduleJobsPreparationForUser,
 } = require('../jobs/jobsPreparation.service');
+const logger = require('../../common/utils/logger');
+const notificationsService = require('../notifications/notifications.service');
 
 const ensureSupabase = () => {
   if (!isConfigured || !supabase) {
@@ -36,6 +38,23 @@ const sanitizeUser = (user) => {
   if (!user) return null;
   const { password_hash: _passwordHash, ...safeUser } = user;
   return safeUser;
+};
+
+const registerAuthDevice = async ({ userId, fcmToken, platform }) => {
+  if (!fcmToken || !platform) return;
+
+  try {
+    await notificationsService.registerDevice({
+      userId,
+      payload: { token: fcmToken, platform },
+    });
+  } catch (error) {
+    logger.warn('Failed to register FCM token during authentication', {
+      userId,
+      platform,
+      reason: error.message,
+    });
+  }
 };
 
 const createUser = async (userData) => {
@@ -143,6 +162,12 @@ const createUser = async (userData) => {
     '7d',
   );
 
+  await registerAuthDevice({
+    userId: newUser.id,
+    fcmToken: userData.fcmToken,
+    platform: userData.platform,
+  });
+
   scheduleJobsPreparationForUser({
     userId: newUser.id,
     reason: 'register',
@@ -157,7 +182,7 @@ const createUser = async (userData) => {
   };
 };
 
-const loginUser = async (email, password) => {
+const loginUser = async ({ email, password, fcmToken, platform }) => {
   const client = ensureSupabase();
 
   const { data: user, error: fetchError } = await client
@@ -222,8 +247,13 @@ const loginUser = async (email, password) => {
     '7d',
   );
 
-  // TODO: Return user data and tokens
-  return {accessToken, refreshToken };
+  await registerAuthDevice({
+    userId: user.id,
+    fcmToken,
+    platform,
+  });
+
+  return { accessToken, refreshToken };
 };
 
 const getMe = async (userId) => {

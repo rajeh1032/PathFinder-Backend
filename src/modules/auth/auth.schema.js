@@ -1,5 +1,10 @@
 const Joi = require('joi');
 
+const deviceFields = {
+  fcmToken: Joi.string().min(10).max(4096),
+  platform: Joi.string().valid('android', 'ios', 'web'),
+};
+
 const registerSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().min(8).required(),
@@ -12,12 +17,14 @@ const registerSchema = Joi.object({
   experienceYear: Joi.string().required(),
   currentStatus: Joi.string().required(),
   targetCareer: Joi.string().required(),
-});
+  ...deviceFields,
+}).and('fcmToken', 'platform');
 
 const loginSchema = Joi.object({
   email: Joi.string().email().required(),
   password: Joi.string().required(),
-});
+  ...deviceFields,
+}).and('fcmToken', 'platform');
 
 const changePasswordSchema = Joi.object({
   password: Joi.string().min(8).required(),

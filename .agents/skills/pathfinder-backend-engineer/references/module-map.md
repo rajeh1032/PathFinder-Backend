@@ -15,8 +15,9 @@ Current `src/server.js` mounts:
 | `/api/v1/courses` | `src/modules/courses/courses.routes.js` | Implemented course import preview/confirm and recommendations |
 | `/api/v1/interviews` and `/api/interviews` | `src/modules/interviews/interviews.routes.js` | Implemented career paths + session generation (mounted at both prefixes) |
 | `/api/chat` | `src/modules/chat/chat.routes.js` | Implemented chat sessions/messages (no auth middleware yet) |
+| `/api/v1/notifications` | `src/modules/notifications/notifications.routes.js` | Implemented inbox, settings, and FCM device registration |
 
-The `ai` module is implemented as a shared support module (Gemini wrapper) and is intentionally not mounted. The following modules are still empty 0-byte scaffolds and are not mounted: `appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `notifications`, `profiles`, `savedJobs`, `skills`. Do not treat planned handoff endpoints as implemented API contracts.
+The `ai` module is implemented as a shared support module (Gemini wrapper) and is intentionally not mounted. The following modules are still empty 0-byte scaffolds and are not mounted: `appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `profiles`, `savedJobs`, `skills`. Do not treat planned handoff endpoints as implemented API contracts.
 
 ## Module Details
 
@@ -32,7 +33,7 @@ The `ai` module is implemented as a shared support module (Gemini wrapper) and i
 | `interviews` | Interview sessions, questions, answers, and feedback. | `interviews.controller.js`, `interviews.routes.js`, `interviews.service.js`, `interviews.repository.js`, `interviews.schema.js` | `GET /career-paths` (auth), `POST /sessions` (auth) | `interview_sessions`, `interview_questions`, `career_paths`, question-set cache; reads `user_skills`, `cvs`, `cv_skills` | Gemini (`gemini.service`), RAG service, auth | Implemented with embedding-based question-set caching and fallback generation. |
 | `jobMatches` | Match users/CVs to jobs and store match explanations. | `jobMatches.controller.js`, `jobMatches.routes.js`, `jobMatches.service.js` | None | `job_matches`, reads `jobs`, `cvs`, `cv_analyses`, `skills`, `user_skills` | Jobs, CVs, AI module | Empty files. Scoring rules need confirmation before implementation. |
 | `jobs` | Job catalog, manual/API jobs, search/list/detail. | `jobs.controller.js`, `jobs.repository.js`, `jobs.routes.js`, `jobs.schema.js`, `jobs.service.js` | None | `jobs`, reads `skills`, `api_sync_runs`; related `saved_jobs`, `applied_jobs` | Supabase repository, validation | Files exist but are empty. |
-| `notifications` | User notification preferences/settings. | `notifications.controller.js`, `notifications.service.js`, `notifications.routes.js` | None | `notification_settings`, reads `users` | Auth | Empty files. No repository/schema yet. |
+| `notifications` | User inbox, settings, device registration, and FCM delivery. | `notifications.controller.js`, `notifications.service.js`, `notifications.repository.js`, `notifications.routes.js`, `notifications.schema.js`, `push.service.js` | Inbox list/unread/read/dismiss, settings get/update, device register/unregister | `notifications`, `notification_settings`, `device_tokens`, reads `users` | Auth, Firebase Admin | Implemented and mounted under `/api/v1/notifications`. |
 | `profiles` | One profile per user plus experiences, education, preferences, achievements. | `profiles.controller.js`, `profiles.repository.js`, `profiles.routes.js`, `profiles.schema.js`, `profiles.service.js` | None | `profiles`, `profile_experiences`, `profile_education`, `user_preferences`, `user_achievements`; reads lookups and `career_paths` | Auth, users, storage for avatars | Files exist but are empty. |
 | `roadmaps` | Personalized learning roadmaps and steps. | `roadmaps.controller.js`, `roadmaps.routes.js`, `roadmaps.service.js`, `roadmaps.repository.js`, `roadmaps.schema.js` | `POST /generate` (auth), `GET /me` (auth), `GET /:id` (auth), `PATCH /:roadmapId/steps/:stepId/progress` (auth) | `roadmaps`, `roadmap_steps`, reads `career_paths`, `skills`, `courses` | Gemini AI module, auth | Implemented with repository and schema. |
 | `rag` | RAG document/chunk metadata and uploads for retrieval-augmented features. | `rag.controller.js`, `rag.routes.js`, `rag.service.js`, `rag.repository.js`, `rag.schema.js` | `POST /documents`, `POST /documents/upload` (multer), `GET /documents`, `GET /documents/:id`, `PATCH /documents/:id`, `DELETE /documents/:id` | `rag_documents`, `rag_chunks` | Supabase, storage, Gemini embeddings | Implemented. Auth is temporarily bypassed (comment notes admin-auth pending). |
@@ -74,7 +75,7 @@ Relevant planned bases include:
 
 ## Missing Or Inconsistent Patterns
 
-- `src/server.js` mounts 9 implemented modules; 8 product modules remain empty (`appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `notifications`, `profiles`, `savedJobs`, `skills`).
+- `src/server.js` mounts 10 implemented modules; 7 product modules remain empty (`appliedJobs`, `coverLetters`, `jobMatches`, `jobs`, `profiles`, `savedJobs`, `skills`).
 - `interviews` is mounted at two prefixes (`/api/interviews` and `/api/v1/interviews`); `chat` is under `/api/chat` instead of `/api/v1/chat`.
 - `chat` endpoints have no `authenticate` middleware, and `rag` endpoints bypass auth (temporary), which conflicts with the rule that user/admin endpoints must be protected.
 - `users.schema.js` exists but is empty even though the `users` module is implemented (validation gap).

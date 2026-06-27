@@ -834,6 +834,40 @@ One settings row per user.
 | `created_at` | `timestamptz` | Default `now()` |
 | `updated_at` | `timestamptz` | Default `now()` |
 
+### `notifications`
+
+Persistent notification inbox rows created by backend feature workflows.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | FK to `users.id`, cascade delete |
+| `type` | `text` | Feature event type used for app navigation |
+| `category` | `text` | Job, interview, insight, learning, or document |
+| `title` | `text` | Required |
+| `body` | `text` | Optional |
+| `action_label` | `text` | Optional |
+| `action_url` | `text` | Optional app destination |
+| `metadata` | `jsonb` | Default `{}` |
+| `is_read` | `boolean` | Default `false` |
+| `read_at` | `timestamptz` | Nullable |
+| `created_at` | `timestamptz` | Default `now()` |
+
+### `device_tokens`
+
+FCM device registrations. A token is globally unique and is reassigned when a
+different user authenticates on the same app installation.
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | `uuid` | Primary key |
+| `user_id` | `uuid` | FK to `users.id`, cascade delete |
+| `token` | `text` | Unique FCM registration token |
+| `platform` | `text` | Android, iOS, or web |
+| `last_used_at` | `timestamptz` | Refreshed on registration |
+| `created_at` | `timestamptz` | Default `now()` |
+| `updated_at` | `timestamptz` | Default `now()` |
+
 ### `activity_logs`
 
 Admin and system audit trail.
@@ -909,6 +943,8 @@ Admin and system audit trail.
 | `rag_documents` | `rag_chunks` | One-to-many |
 | `api_sources` | `api_sync_runs` | One-to-many |
 | `users` | `notification_settings` | One-to-one |
+| `users` | `notifications` | One-to-many |
+| `users` | `device_tokens` | One-to-many |
 | `users` | `activity_logs` | One-to-many admin actions |
 | `career_paths` | `interview_question_sets` | One-to-many |
 
@@ -934,7 +970,7 @@ Use this checklist before creating any module. A module is correct only if it to
 | `interviews` | `interview_sessions`, `interview_questions`, `interview_question_sets` | `jobs`, `career_paths`, `ai_logs` |
 | `coverLetters` | `cover_letters`, `cover_letter_insights`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
 | `chat` | `chat_sessions`, `chat_messages` | `rag_documents`, `rag_chunks`, `ai_logs` |
-| `notifications` | `notification_settings` | `users` |
+| `notifications` | `notification_settings`, `notifications`, `device_tokens` | `users` |
 | `ai` | `ai_logs` | Feature tables that requested the AI action |
 | `rag` | `rag_documents`, `rag_chunks` | `ai_logs` |
 | `apiSources` | `api_sources`, `api_sync_runs` | `jobs` |

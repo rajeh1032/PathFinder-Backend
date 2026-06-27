@@ -10,7 +10,7 @@ Use this reference together with `docs/DATABASE_SCHEMA.md`, `docs/DATABASE_SCHEM
 - Later migrations add Node auth fields, lookup normalization, course/profile details, interview fields, and cover letter/job screen fields.
 - `supabase/seed.sql`: demo data for local/mock usage.
 
-At inspection time, docs and migrations both list the same 43 public tables.
+Docs and migrations list the same 45 public tables.
 
 ## Extensions And Storage
 
@@ -76,6 +76,8 @@ Rule: binary files go to Storage; database rows keep metadata and storage paths.
 | `api_sync_runs` | `api_source_id`, timing/status/raw count/jobs added/updated/rejected/error |
 | `system_settings` | key/value/type/description/updated by |
 | `notification_settings` | user notification toggles |
+| `notifications` | user notification inbox rows |
+| `device_tokens` | FCM device registrations |
 | `activity_logs` | admin user/action/module/target/old/new/ip/user agent/status |
 
 ## Module-To-Table Mapping
@@ -94,7 +96,7 @@ Rule: binary files go to Storage; database rows keep metadata and storage paths.
 | `interviews` | `interview_sessions`, `interview_questions` | `jobs`, `career_paths`, `ai_logs` |
 | `coverLetters` | `cover_letters`, `cover_letter_insights`, `cover_letter_versions` | `jobs`, `profiles`, `cv_analyses`, `ai_logs` |
 | `chat` | `chat_sessions`, `chat_messages` | `rag_documents`, `rag_chunks`, `ai_logs` |
-| `notifications` | `notification_settings` | `users` |
+| `notifications` | `notification_settings`, `notifications`, `device_tokens` | `users` |
 | `ai` | `ai_logs` | feature-specific tables |
 
 ## Schema Change Rules
@@ -111,7 +113,7 @@ Rule: binary files go to Storage; database rows keep metadata and storage paths.
 - The handoff mentions Supabase Auth, but current schema/setup says Node-owned auth with `users.password_hash`.
 - The handoff mentions TypeScript, Zod, and Prisma, but current repo uses JavaScript CommonJS, Joi, and Supabase JS.
 - Product modules are mostly empty; schema existence does not mean runtime API behavior exists.
-- `.env.example` does not exist.
+- `.env.example` documents Firebase, Supabase, Gemini, storage, and JWT variables without real secrets.
 - `supabase/migrations/20260610162351_add_course_catalog_user_progress.sql` is present but contains only one line at inspection time.
 
 ## Source Files Inspected

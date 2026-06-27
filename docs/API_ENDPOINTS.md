@@ -41,6 +41,10 @@ Example response:
 
 ### POST `/api/v1/auth/register`
 
+The optional `fcmToken` and `platform` fields register the device during
+account creation. They must be supplied together. `platform` accepts
+`android`, `ios`, or `web`.
+
 Creates a new user, creates the profile row, and returns auth tokens.
 
 Auth: not required
@@ -70,6 +74,9 @@ Returns:
 - `refreshToken`
 
 ### POST `/api/v1/auth/login`
+
+The optional `fcmToken` and `platform` fields refresh or reassign the device
+registration during login. They must be supplied together.
 
 Logs in with email/password and returns tokens.
 

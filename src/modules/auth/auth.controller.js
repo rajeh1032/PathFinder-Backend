@@ -13,7 +13,7 @@ const {
 const register = asyncHandler(async (req, res) => {
   const authData = await createUser(req.body);
   if (!authData) {
-    logger.error('User registration failed', { body: req.body });
+    logger.error('User registration failed', { email: req.body.email });
     return sendError(res, {}, 'User registration failed', 500);
   }
 
@@ -22,9 +22,9 @@ const register = asyncHandler(async (req, res) => {
 });
 
 const login = asyncHandler(async (req, res) => {
-  const authData = await loginUser(req.body.email, req.body.password);
+  const authData = await loginUser(req.body);
   if (!authData) {
-    logger.error('Login failed', { body: req.body });
+    logger.error('Login failed', { email: req.body.email });
     return sendError(res, {}, 'Invalid email or password', 401);
   }
 

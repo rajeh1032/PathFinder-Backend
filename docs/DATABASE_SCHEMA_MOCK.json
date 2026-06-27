@@ -49,6 +49,8 @@
     "api_sync_runs": ["id", "api_source_id", "started_at", "finished_at", "status", "raw_response_count", "jobs_added", "jobs_updated", "jobs_rejected", "error_message"],
     "system_settings": ["id", "setting_key", "setting_value", "type", "description", "updated_by", "updated_at"],
     "notification_settings": ["id", "user_id", "push_enabled", "email_enabled", "job_alerts_enabled", "roadmap_reminders_enabled", "interview_reminders_enabled", "ai_tips_enabled", "created_at", "updated_at"],
+    "notifications": ["id", "user_id", "type", "category", "title", "body", "action_label", "action_url", "metadata", "is_read", "read_at", "created_at"],
+    "device_tokens": ["id", "user_id", "token", "platform", "last_used_at", "created_at", "updated_at"],
     "activity_logs": ["id", "admin_user_id", "action", "module", "target_id", "target_type", "old_data", "new_data", "ip_address", "user_agent", "status", "created_at"]
   },
   "relationships": [
@@ -107,6 +109,8 @@
     {"from": "rag_documents.id", "to": "rag_chunks.rag_document_id", "type": "one_to_many"},
     {"from": "api_sources.id", "to": "api_sync_runs.api_source_id", "type": "one_to_many"},
     {"from": "users.id", "to": "notification_settings.user_id", "type": "one_to_one"},
+    {"from": "users.id", "to": "notifications.user_id", "type": "one_to_many"},
+    {"from": "users.id", "to": "device_tokens.user_id", "type": "one_to_many"},
     {"from": "users.id", "to": "activity_logs.admin_user_id", "type": "one_to_many"}
   ],
   "storageBuckets": [
@@ -131,7 +135,7 @@
     "interviews": {"owns": ["interview_sessions", "interview_questions", "interview_question_sets"], "reads": ["jobs", "career_paths", "ai_logs"]},
     "coverLetters": {"owns": ["cover_letters", "cover_letter_insights", "cover_letter_versions"], "reads": ["jobs", "profiles", "cv_analyses", "ai_logs"]},
     "chat": {"owns": ["chat_sessions", "chat_messages"], "reads": ["rag_documents", "rag_chunks", "ai_logs"]},
-    "notifications": {"owns": ["notification_settings"], "reads": ["users"]},
+    "notifications": {"owns": ["notification_settings", "notifications", "device_tokens"], "reads": ["users"]},
     "ai": {"owns": ["ai_logs"], "reads": ["feature_specific_tables"]},
     "rag": {"owns": ["rag_documents", "rag_chunks"], "reads": ["ai_logs"]},
     "apiSources": {"owns": ["api_sources", "api_sync_runs"], "reads": ["jobs"]},
