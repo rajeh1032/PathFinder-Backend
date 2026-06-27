@@ -34,9 +34,25 @@ const updateSettingsSchema = Joi.object({
   ai_tips_enabled: Joi.boolean(),
 }).min(1);
 
+const DEVICE_PLATFORMS = ["android", "ios", "web"];
+
+const registerDeviceSchema = Joi.object({
+  token: Joi.string().min(10).max(4096).required(),
+  platform: Joi.string()
+    .valid(...DEVICE_PLATFORMS)
+    .required(),
+}).required();
+
+const unregisterDeviceSchema = Joi.object({
+  token: Joi.string().min(10).max(4096).required(),
+}).required();
+
 module.exports = {
   NOTIFICATION_CATEGORIES,
+  DEVICE_PLATFORMS,
   uuidParamSchema,
   listNotificationsQuerySchema,
   updateSettingsSchema,
+  registerDeviceSchema,
+  unregisterDeviceSchema,
 };
