@@ -11,6 +11,8 @@ const {
   uuidParamSchema,
   listNotificationsQuerySchema,
   updateSettingsSchema,
+  registerDeviceSchema,
+  unregisterDeviceSchema,
 } = require("./notifications.schema");
 
 const router = express.Router();
@@ -25,6 +27,20 @@ router.patch(
   "/settings",
   validateBody(updateSettingsSchema),
   notificationsController.updateSettings,
+);
+
+// --- Device tokens (push registration) ---
+// Defined before the "/:id" routes so "devices" is not treated as an id.
+router.post(
+  "/devices",
+  validateBody(registerDeviceSchema),
+  notificationsController.registerDevice,
+);
+
+router.delete(
+  "/devices",
+  validateBody(unregisterDeviceSchema),
+  notificationsController.unregisterDevice,
 );
 
 // --- Inbox ---

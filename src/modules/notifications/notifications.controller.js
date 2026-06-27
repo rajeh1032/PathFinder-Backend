@@ -72,6 +72,26 @@ const updateSettings = asyncHandler(async (req, res) => {
   return sendSuccess(res, result, "Notification settings updated successfully");
 });
 
+const registerDevice = asyncHandler(async (req, res) => {
+  const userId = getRequestUserId(req);
+  const result = await notificationsService.registerDevice({
+    userId,
+    payload: req.body,
+  });
+
+  return sendSuccess(res, result, "Device registered for notifications", 201);
+});
+
+const unregisterDevice = asyncHandler(async (req, res) => {
+  const userId = getRequestUserId(req);
+  const result = await notificationsService.unregisterDevice({
+    userId,
+    token: req.body.token,
+  });
+
+  return sendSuccess(res, result, "Device unregistered");
+});
+
 module.exports = {
   getNotifications,
   getUnreadCount,
@@ -80,4 +100,6 @@ module.exports = {
   dismissNotification,
   getSettings,
   updateSettings,
+  registerDevice,
+  unregisterDevice,
 };

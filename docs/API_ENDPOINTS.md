@@ -810,6 +810,48 @@ Body example:
 }
 ```
 
+### POST `/api/v1/notifications/devices`
+
+Registers (or refreshes) the caller's device token for push notifications.
+Reusing the same token from a different account reassigns it to the new user.
+
+Auth: required
+
+Body:
+
+```json
+{
+  "token": "<fcm_device_token>",
+  "platform": "android"
+}
+```
+
+`platform` must be one of `android`, `ios`, `web`. Returns `data.device`
+(`id`, `platform`). Responds `201`.
+
+### DELETE `/api/v1/notifications/devices`
+
+Removes the given device token for the caller (call on logout). Idempotent:
+removing a token that no longer exists still returns success. Returns
+`data.token`.
+
+Auth: required
+
+Body:
+
+```json
+{
+  "token": "<fcm_device_token>"
+}
+```
+
+Push delivery: when a notification is created, the backend sends an FCM push to
+the user's registered device tokens, respecting `push_enabled` and the
+per-category toggle (`job` → `job_alerts_enabled`, `interview` →
+`interview_reminders_enabled`, `learning` → `roadmap_reminders_enabled`,
+`insight` → `ai_tips_enabled`, `document` → `push_enabled` only). Tokens FCM
+reports as invalid are pruned automatically.
+
 ## Environment Used By These Endpoints
 
 Required for database:
@@ -818,6 +860,14 @@ Required for database:
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 JWT_SECRET=
+```
+
+Required for push notifications (Firebase Admin):
+
+```env
+FIREBASE_PROJECT_ID=
+FIREBASE_CLIENT_EMAIL=
+FIREBASE_PRIVATE_KEY=
 ```
 
 Required for Gemini AI:

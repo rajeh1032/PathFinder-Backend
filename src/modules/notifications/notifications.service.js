@@ -1,6 +1,18 @@
 const AppError = require("../../common/errors/AppError");
+const logger = require("../../common/utils/logger");
 const { buildPaginationMeta } = require("../../common/utils/pagination");
 const notificationsRepository = require("./notifications.repository");
+const pushService = require("./push.service");
+
+// Maps a notification category to the per-user settings toggle that controls
+// whether a push is delivered for it. `null` means only `push_enabled` applies.
+const CATEGORY_SETTING_FLAG = {
+  job: "job_alerts_enabled",
+  interview: "interview_reminders_enabled",
+  learning: "roadmap_reminders_enabled",
+  insight: "ai_tips_enabled",
+  document: null,
+};
 
 const mapNotification = (row) => ({
   id: row.id,
@@ -133,6 +145,58 @@ const updateSettings = async ({ userId, payload }) => {
   return { settings: mapSettings(row) };
 };
 
+// --- Device tokens (push registration) ---
+
+const registerDevice = async ({ userId, payload }) => {
+  const row = await notificationsRepository.upsertDeviceToken({
+    userId,
+    token: payload.token,
+    platform: payload.platform,
+  });
+
+  return { device: { id: row.id, platform: row.platform } };
+};
+
+const unregisterDevice = async ({ userId, token }) => {
+  await notificationsRepository.deleteDeviceTokenByValue({ userId, token });
+  return { token };
+};
+
+// Best-effort push delivery for a freshly created notification. Respects the
+// user's master `push_enabled` flag and the per-category toggle.
+const sendPushToUser = async ({
+  userId,
+  type,
+  category,
+  title,
+  body,
+  actionUrl,
+  notificationId,
+  metadata = {},
+}) => {
+  const settings = await ensureSettings(userId);
+  if (!settings.push_enabled) return;
+
+  const flag = CATEGORY_SETTING_FLAG[category];
+  if (flag && settings[flag] === false) return;
+
+  const tokens = await notificationsRepository.findDeviceTokensByUserId(userId);
+  if (!tokens.length) return;
+
+  await pushService.sendToTokens({
+    tokens,
+    title,
+    body,
+    data: {
+      notification_id: notificationId,
+      type,
+      category,
+      action_url: actionUrl,
+      ...metadata,
+    },
+  });
+};
+
 // Internal helper for other feature services to create a notification.
 // Not exposed over HTTP. Example:
 //   createUserNotification({ userId, type: 'job_match', category: 'job', ... })
@@ -182,7 +246,27 @@ const createUserNotification = async ({
     metadata: finalMetadata,
   });
 
-  return mapNotification(row);
+  const notification = mapNotification(row);
+
+  // Best-effort push: never let a push failure break notification creation.
+  sendPushToUser({
+    userId,
+    type,
+    category,
+    title,
+    body,
+    actionUrl,
+    notificationId: notification.id,
+    metadata,
+  }).catch((error) =>
+    logger.warn("Failed to send push notification", {
+      userId,
+      type,
+      reason: error.message,
+    }),
+  );
+
+  return notification;
 };
 
 module.exports = {
@@ -193,5 +277,7 @@ module.exports = {
   dismissNotification,
   getSettings,
   updateSettings,
+  registerDevice,
+  unregisterDevice,
   createUserNotification,
 };

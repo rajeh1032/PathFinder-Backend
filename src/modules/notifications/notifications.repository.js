@@ -206,6 +206,77 @@ const updateSettings = async ({ userId, changes }) => {
   return data;
 };
 
+const DEVICE_TOKEN_FIELDS = `
+  id,
+  user_id,
+  token,
+  platform,
+  last_used_at,
+  created_at,
+  updated_at
+`;
+
+// Registers (or refreshes) a device token. Reusing the same token from a
+// different account reassigns it via the unique `token` conflict target.
+const upsertDeviceToken = async ({ userId, token, platform }) => {
+  const client = ensureSupabase();
+  const now = new Date().toISOString();
+  const { data, error } = await client
+    .from("device_tokens")
+    .upsert(
+      {
+        user_id: userId,
+        token,
+        platform,
+        last_used_at: now,
+        updated_at: now,
+      },
+      { onConflict: "token" },
+    )
+    .select(DEVICE_TOKEN_FIELDS)
+    .single();
+
+  handleSupabaseError(error, "Failed to register device token");
+  return data;
+};
+
+const deleteDeviceTokenByValue = async ({ userId, token }) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from("device_tokens")
+    .delete()
+    .eq("token", token)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+
+  handleSupabaseError(error, "Failed to remove device token");
+  return data;
+};
+
+const findDeviceTokensByUserId = async (userId) => {
+  const client = ensureSupabase();
+  const { data, error } = await client
+    .from("device_tokens")
+    .select("token")
+    .eq("user_id", userId);
+
+  handleSupabaseError(error, "Failed to fetch device tokens");
+  return (data || []).map((row) => row.token);
+};
+
+// Removes tokens FCM reported as invalid/unregistered.
+const deleteDeviceTokens = async (tokens) => {
+  if (!tokens || tokens.length === 0) return;
+  const client = ensureSupabase();
+  const { error } = await client
+    .from("device_tokens")
+    .delete()
+    .in("token", tokens);
+
+  handleSupabaseError(error, "Failed to prune device tokens");
+};
+
 module.exports = {
   findNotificationsPage,
   countUnread,
@@ -218,4 +289,8 @@ module.exports = {
   findSettingsByUserId,
   createSettings,
   updateSettings,
+  upsertDeviceToken,
+  deleteDeviceTokenByValue,
+  findDeviceTokensByUserId,
+  deleteDeviceTokens,
 };
