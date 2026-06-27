@@ -175,15 +175,28 @@ const sendPushToUser = async ({
   metadata = {},
 }) => {
   const settings = await ensureSettings(userId);
-  if (!settings.push_enabled) return;
+  if (!settings.push_enabled) {
+    logger.info("Push skipped: push_enabled is off", { userId, category });
+    return;
+  }
 
   const flag = CATEGORY_SETTING_FLAG[category];
-  if (flag && settings[flag] === false) return;
+  if (flag && settings[flag] === false) {
+    logger.info("Push skipped: category toggle off", {
+      userId,
+      category,
+      flag,
+    });
+    return;
+  }
 
   const tokens = await notificationsRepository.findDeviceTokensByUserId(userId);
-  if (!tokens.length) return;
+  if (!tokens.length) {
+    logger.info("Push skipped: no device tokens", { userId });
+    return;
+  }
 
-  await pushService.sendToTokens({
+  const result = await pushService.sendToTokens({
     tokens,
     title,
     body,
@@ -194,6 +207,13 @@ const sendPushToUser = async ({
       action_url: actionUrl,
       ...metadata,
     },
+  });
+
+  logger.info("Push dispatched", {
+    userId,
+    category,
+    tokenCount: tokens.length,
+    sent: result.sent,
   });
 };
 

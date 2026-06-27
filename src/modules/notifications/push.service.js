@@ -22,7 +22,10 @@ const INVALID_TOKEN_CODES = new Set([
 // Sends a multicast push to the given tokens and prunes any tokens that FCM
 // reports as invalid. Returns the number of successful sends.
 const sendToTokens = async ({ tokens, title, body, data }) => {
-  if (!isConfigured || !messaging) return { sent: 0 };
+  if (!isConfigured || !messaging) {
+    logger.warn("Push not sent: Firebase Admin is not configured");
+    return { sent: 0 };
+  }
   if (!Array.isArray(tokens) || tokens.length === 0) return { sent: 0 };
 
   const message = {
@@ -37,8 +40,14 @@ const sendToTokens = async ({ tokens, title, body, data }) => {
 
   const invalidTokens = [];
   response.responses.forEach((res, index) => {
-    if (!res.success && INVALID_TOKEN_CODES.has(res.error?.code)) {
-      invalidTokens.push(tokens[index]);
+    if (!res.success) {
+      logger.warn("FCM send failed for a token", {
+        code: res.error?.code,
+        message: res.error?.message,
+      });
+      if (INVALID_TOKEN_CODES.has(res.error?.code)) {
+        invalidTokens.push(tokens[index]);
+      }
     }
   });
 
